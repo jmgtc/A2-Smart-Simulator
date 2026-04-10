@@ -1,0 +1,14 @@
+{
+    "name": "A2 Smart Simulator",
+    "short_name": "A2 Pro",
+    "start_url": "examen_A2.html",
+    "display": "standalone",
+    "theme_color": "#22d3ee",
+    "icons": [
+        {
+            "src": "https://cdn-icons-png.flaticon.com/512/3198/3198305.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

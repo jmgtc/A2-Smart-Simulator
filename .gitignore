@@ -1,0 +1,5 @@
+node_modules/
+.gemini/
+scratch/
+*.py
+.DS_Store

@@ -644,7 +644,7 @@
             
             // Repetir
             if (cmd.includes('repetir') || cmd.includes('repite')) {
-                if (cmd.includes('pregunta')) { loadQuestion(currentIndex); return; }
+                if (cmd.includes('pregunta')) { repeatAudio(); return; }
                 if (cmd.includes('opción a') || cmd.includes('la a')) { readSingleOption(0); return; }
                 if (cmd.includes('opción b') || cmd.includes('la b')) { readSingleOption(1); return; }
                 if (cmd.includes('opción c') || cmd.includes('la c')) { readSingleOption(2); return; }

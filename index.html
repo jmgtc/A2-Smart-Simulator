@@ -402,6 +402,20 @@
             transform: scale(1.02);
             z-index: 5;
         }
+        #voiceTogglePanel.voice-active {
+            border-color: var(--accent);
+            background: rgba(34, 211, 238, 0.05);
+        }
+        #voiceTogglePanel.voice-active .voice-indicator {
+            background: var(--accent) !important;
+            box-shadow: 0 0 10px var(--accent);
+            animation: pulse-cyan 1.5s infinite;
+        }
+        @keyframes pulse-cyan {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -423,6 +437,15 @@
             <p>Plataforma bimodal v2.0. Base de datos con más de 100 preguntas actualizadas (DGT 2026).</p>
             
             <div id="statsContainer"></div>
+
+            <!-- MODO MANOS LIBRES TOGGLE -->
+            <div id="voiceTogglePanel" class="glass-panel" onclick="toggleVoice()" style="margin-top: 20px; padding: 20px; cursor: pointer; border-color: rgba(255,255,255,0.1); display: flex; align-items: center; gap: 15px; transition: all 0.3s;">
+                <div class="voice-indicator" style="width: 12px; height: 12px; border-radius: 50%; background: #334155;"></div>
+                <div style="text-align: left;">
+                    <p id="voiceStatusText" style="margin: 0; font-weight: 600; font-size: 0.95rem; color: #fff;">Activar Modo Manos Libres</p>
+                    <p style="margin: 0; font-size: 0.8rem; opacity: 0.6;">Controla el examen con tu voz</p>
+                </div>
+            </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px;">
                 <!-- MODO EXAMEN -->
@@ -467,6 +490,10 @@
         <div id="quizScreen" class="glass-panel hidden">
             <span class="question-number" id="qNumber">Pregunta 1 de 20</span>
             <div class="question-text" id="qText">Cargando pregunta...</div>
+            
+            <div id="qImageContainer" class="image-container" style="display: none; margin: 1.5rem auto; text-align: center;">
+                <img id="qImage" src="" alt="Pregunta" style="max-width: 100%; max-height: 250px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+            </div>
             
             <div id="optionsContainer"></div>
 
@@ -764,6 +791,7 @@
             // Configurar modo
             if (mode === 'audio') {
                 audioActive = true;
+                if (!voiceActive) toggleVoice(); // Auto-activar reconocimiento en modo audio
                 const btn = document.getElementById('audioToggle');
                 btn.classList.add('active');
                 btn.innerHTML = `<span>🔊</span> Audio On`;

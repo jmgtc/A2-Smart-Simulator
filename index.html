@@ -489,6 +489,12 @@
         <!-- QUIZ SCREEN -->
         <div id="quizScreen" class="glass-panel hidden">
             <span class="question-number" id="qNumber">Pregunta 1 de 20</span>
+            
+            <!-- PROGRESS BAR -->
+            <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; margin-bottom: 25px; overflow: hidden;">
+                <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent), #818cf8); transition: width 0.4s cubic-bezier(0.1, 0.7, 0.1, 1);"></div>
+            </div>
+
             <div class="question-text" id="qText">Cargando pregunta...</div>
             
             <div id="qImageContainer" class="image-container" style="display: none; margin: 1.5rem auto; text-align: center;">
@@ -626,6 +632,7 @@
 
         function processVoiceCommand(cmd) {
             console.log('Comando de voz:', cmd);
+            if (!questions || questions.length === 0) return;
             const q = questions[currentIndex];
             
             // Repetir

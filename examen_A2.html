@@ -735,9 +735,14 @@
         }
 
         function startListening() {
-            if (voiceActive && recognition && !isListening && !synth.speaking) {
-                try { recognition.start(); } catch(e) {}
+            if (!voiceActive || !recognition || isListening) return;
+            
+            if (synth.speaking) {
+                setTimeout(startListening, 250);
+                return;
             }
+            
+            try { recognition.start(); } catch(e) {}
         }
 
         function processVoiceCommand(cmd) {
@@ -747,10 +752,10 @@
             
             // Repetir
             if (cmd.includes('repetir') || cmd.includes('repite')) {
-                if (cmd.includes('pregunta')) { repeatAudio(); return; }
                 if (cmd.includes('opción a') || cmd.includes('la a')) { readSingleOption(0); return; }
                 if (cmd.includes('opción b') || cmd.includes('la b')) { readSingleOption(1); return; }
                 if (cmd.includes('opción c') || cmd.includes('la c')) { readSingleOption(2); return; }
+                repeatAudio(); return;
             }
 
             // Seleccionar (validación estricta para evitar falsos positivos de ruido)
@@ -936,14 +941,6 @@
                 if (mode === 'tutor') {
                     voiceActive = true;
                     initRecognition();
-                    setTimeout(() => {
-                        showAssistantMessage("¡Hola! Soy tu Tutor IA. Seleccionaré las preguntas y te guiaré por voz. Empezamos.", 4000);
-                        speakText("¡Hola! Soy tu Tutor IA. Seleccionaré las preguntas y te guiaré por voz. Empezamos.", () => {
-                            // loadQuestion happens right after startExam synchronously, so speakSequentially will already be called.
-                            // However, we want to make sure the sequence sounds right. The loadQuestion triggers speakSequentially after 500ms anyway.
-                            // So we shouldn't speak a long intro here, or we should delay loadQuestion.
-                        });
-                    }, 100);
                 }
             } else {
                 audioActive = false;
@@ -976,13 +973,24 @@
             
             document.getElementById('timerDisplay').style.display = 'block';
             initGrid();
-            loadQuestion(0);
+            
+            if (mode === 'tutor') {
+                setTimeout(() => {
+                    showAssistantMessage("¡Hola! Soy tu Tutor IA. Seleccionaré las preguntas y te guiaré por voz. Empezamos.", 4000);
+                    speakText("¡Hola! Soy tu Tutor IA. Empezamos con el test.", () => {
+                        loadQuestion(0);
+                    });
+                }, 100);
+            } else {
+                loadQuestion(0);
+            }
             
             timerInterval = setInterval(() => {
                 timeRemaining--;
                 let m = Math.floor(timeRemaining / 60).toString().padStart(2, '0');
                 let s = (timeRemaining % 60).toString().padStart(2, '0');
                 document.getElementById('timerDisplay').innerText = `${m}:${s}`;
+
                 if(timeRemaining <= 0) submitExam();
             }, 1000);
         }

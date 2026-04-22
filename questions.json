@@ -9,7 +9,8 @@
     "ans": 2,
     "tags": [
       "Normativa y Documentación"
-    ]
+    ],
+    "explanation": "Para obtener el permiso A, que permite conducir cualquier motocicleta, se requiere tener al menos 20 años y una experiencia previa de 2 años con el permiso A2."
   },
   {
     "q": "¿Cuál de estos permisos autoriza a conducir triciclos de motor de potencia máxima superior a 15 kW?",
@@ -22,7 +23,8 @@
     "tags": [
       "Normativa y Documentación",
       "Mantenimiento y Mecánica"
-    ]
+    ],
+    "explanation": "Aunque el permiso A permite conducir triciclos de motor, si la potencia supera los 15 kW, la edad mínima requerida es de 21 años."
   },
   {
     "q": "El permiso de la clase A1, ¿autoriza a conducir motocicletas con sidecar?",
@@ -34,7 +36,8 @@
     "ans": 0,
     "tags": [
       "Normativa y Documentación"
-    ]
+    ],
+    "explanation": "El permiso A1 autoriza a conducir motocicletas (con o sin sidecar) de hasta 125 cc y 11 kW de potencia."
   },
   {
     "q": "Por autopista, ¿qué luces llevará encendidas durante el día en su motocicleta?",
@@ -46,7 +49,8 @@
     "ans": 1,
     "tags": [
       "Equipamiento y Seguridad (2026)"
-    ]
+    ],
+    "explanation": "Las motocicletas deben llevar la luz de cruce encendida durante todo el día para mejorar su visibilidad ante otros conductores."
   },
   {
     "q": "¿Qué consecuencias tiene la pérdida de la totalidad de los puntos asignados al titular de un permiso?",
@@ -58,7 +62,8 @@
     "ans": 1,
     "tags": [
       "Normativa y Documentación"
-    ]
+    ],
+    "explanation": "La pérdida total de puntos conlleva la pérdida de vigencia del permiso. El conductor deberá realizar un curso de sensibilización y una prueba teórica tras cumplir el plazo de sanción."
   },
   {
     "q": "Si al realizar la inspección técnica periódica de su motocicleta, el resultado es ITV desfavorable...",
@@ -70,7 +75,8 @@
     "ans": 0,
     "tags": [
       "Normativa y Documentación"
-    ]
+    ],
+    "explanation": "Una ITV desfavorable significa que el vehículo tiene defectos graves. Se permite circular solo para ir al taller y volver a la estación ITV en un plazo máximo de dos meses."
   },
   {
     "q": "Si es titular, únicamente, del permiso de conducción de la clase A1 y desea conducir una motocicleta de 125 centímetros cúbicos de cilindrada y una potencia de 12 kilovatios, ¿le autoriza dicho permiso a conducirla?",
@@ -83,7 +89,8 @@
     "tags": [
       "Normativa y Documentación",
       "Equipamiento y Seguridad (2026)"
-    ]
+    ],
+    "explanation": "El permiso A1 autoriza motocicletas de hasta 125 cc y un máximo de 11 kW. Si la potencia es de 12 kW, ya no es apta para este permiso."
   },
   {
     "q": "Si usted circula con su motocicleta fuera de poblado y adelanta por la derecha a un autobús que pretende girar a la izquierda, debe saber que...",
@@ -95,7 +102,8 @@
     "ans": 1,
     "tags": [
       "General"
-    ]
+    ],
+    "explanation": "Al adelantar a un vehículo grande, este nos protege del viento. Al sobrepasarlo, podemos recibir una ráfaga repentina que afecte nuestra estabilidad."
   },
   {
     "q": "Si su hijo tiene 10 años de edad, ¿le está permitido transportarlo en su motocicleta debido a su edad?",
@@ -107,7 +115,8 @@
     "ans": 1,
     "tags": [
       "Normativa y Documentación"
-    ]
+    ],
+    "explanation": "Como norma general, los niños deben tener 12 años, pero excepcionalmente pueden viajar con 7 años si el conductor es su padre, madre o tutor."
   },
   {
     "q": "¿Qué mantenimiento necesita la batería de una motocicleta con sistema de encendido por magneto?",
@@ -116,11 +125,7 @@
       "Ninguno, ya que ese tipo de motocicletas no necesitan batería",
       "Renovar el electrolito frecuentemente"
     ],
-    "ans": 1,
-    "tags": [
-      "Mantenimiento y Mecánica",
-      "Equipamiento y Seguridad (2026)"
-    ]
+    "explanation": "Las motocicletas con sistema de encendido por magneto generan su propia electricidad para la chispa de la bujía, por lo que no dependen de una batería para funcionar."
   },
   {
     "q": "¿Está permitido a una motocicleta circular por el arcén de una autovía?",
@@ -129,10 +134,7 @@
       "No, en ningún caso.",
       "Si, cuando por avería circula a una velocidad anormalmente reducida."
     ],
-    "ans": 2,
-    "tags": [
-      "Normativa y Documentación"
-    ]
+    "explanation": "Si una motocicleta no puede alcanzar la velocidad mínima obligatoria por avería, debe circular por el arcén si existe y es transitable."
   },
   {
     "q": "Un cuadriciclo de motor y de potencia superior a 15 kW, ¿podrá conducirse con el permiso de la clase A?",
@@ -145,7 +147,8 @@
     "tags": [
       "Normativa y Documentación",
       "Mantenimiento y Mecánica"
-    ]
+    ],
+    "explanation": "Para conducir un cuadriciclo de motor de más de 15 kW es necesario el permiso de la clase B. El permiso A no es suficiente."
   },
   {
     "q": "Cuando circule por un carril VAO (carril para vehículos con alta ocupación) NO podrá...",
@@ -154,10 +157,7 @@
       "adelantar.",
       "superar los 80 km/h."
     ],
-    "ans": 0,
-    "tags": [
-      "Normativa y Documentación"
-    ]
+    "explanation": "En un carril VAO, las motocicletas pueden circular pero tienen prohibido llevar cualquier tipo de remolque o semirremolque."
   },
   {
     "q": "¿Qué tipo de combustible utilizará una motocicleta que posee catalizador?",
@@ -166,10 +166,7 @@
       "Gasolina sin plomo",
       "Gasolina con sustituto del plomo"
     ],
-    "ans": 1,
-    "tags": [
-      "Mantenimiento y Mecánica"
-    ]
+    "explanation": "Los vehículos con catalizador deben usar obligatoriamente gasolina sin plomo, ya que el plomo destruiría el catalizador de forma inmediata."
   },
   {
     "q": "El permiso de la clase A1 ¿autoriza conducir motocicletas con una cilindrada de 125 centímetros cúbicos y una potencia de 12 kilovatios?",
@@ -191,10 +188,7 @@
       "Fuera de la calzada, en la parte transitable del arcén derecho.",
       "Fuera de la calzada, dejando libre la parte transitable del arcén derecho o izquierdo."
     ],
-    "ans": 0,
-    "tags": [
-      "Normativa y Documentación"
-    ]
+    "explanation": "En vías interurbanas, el estacionamiento debe realizarse siempre fuera de la calzada y de la parte transitable del arcén derecho."
   },
   {
     "q": "¿En qué tipo de vía suele producirse mayor número de accidentes con víctimas mortales?",
@@ -203,10 +197,7 @@
       "En vías urbanas",
       "En autopistas y autovías"
     ],
-    "ans": 0,
-    "tags": [
-      "General"
-    ]
+    "explanation": "Las vías interurbanas (carreteras convencionales) son el escenario donde se registran más accidentes mortales, a menudo por colisiones frontales o salidas de vía."
   },
   {
     "q": "¿A qué velocidad máxima circularemos cuando la visibilidad de la parte delantera sea menor o igual de 50 metros a causa de la niebla?",
@@ -215,10 +206,7 @@
       "30 kilómetros por hora",
       "50 kilómetros por hora"
     ],
-    "ans": 2,
-    "tags": [
-      "Normativa y Documentación"
-    ]
+    "explanation": "Con visibilidad reducida a 50 metros o menos por niebla espesa, la velocidad máxima segura se reduce drásticamente a 50 km/h para garantizar la distancia de frenado."
   },
   {
     "q": "Su motocicleta tiene una anchura inferior a 1 metro. ¿Puede sobresalir la carga por la parte delantera y trasera de su motocicleta?",
@@ -227,10 +215,7 @@
       "Sí, hasta 0,50 metros tanto por la parte delantera como por la trasera",
       "No, en ningún caso"
     ],
-    "ans": 0,
-    "tags": [
-      "General"
-    ]
+    "explanation": "En motocicletas de menos de 1 metro de ancho, la carga no puede sobresalir por delante, pero sí hasta 0,25 metros por detrás."
   },
   {
     "q": "Su motocicleta dispone de sistema de frenado tanto en la rueda trasera como en la delantera. Habitualmente, ¿cuál de estos sistema tendrá un mayor desgaste durante la frenada?",
@@ -239,10 +224,7 @@
       "El sistema de freno delantero",
       "Ambos sistemas se desgastarán de la misma forma"
     ],
-    "ans": 1,
-    "tags": [
-      "Técnicas de Conducción"
-    ]
+    "explanation": "Al frenar, el peso de la moto se desplaza hacia adelante (transferencia de masas), haciendo que el freno delantero soporte hasta el 70-80% del esfuerzo y sufra más desgaste."
   },
   {
     "q": "¿Qué función desempeña la IMU (Unidad de control inercial) en una motocicleta?",
@@ -251,10 +233,7 @@
       "Permite que todos los demás sistemas electrónicos que tiene la motocicleta funcionen correctamente.",
       "Mide y ajusta únicamente la presión en tiempo real de los neumáticos."
     ],
-    "ans": 1,
-    "tags": [
-      "Mantenimiento y Mecánica"
-    ]
+    "explanation": "La IMU es el 'cerebro' que detecta la inclinación y movimientos de la moto, permitiendo que el ABS en curva o el control de tracción actúen con precisión."
   },
   {
     "q": "El embrague es el elemento mecánico encargado de acoplar:",
@@ -263,10 +242,7 @@
       "El cigüeñal al árbol de transmisión.",
       "El motor y el sistema de transmisión."
     ],
-    "ans": 2,
-    "tags": [
-      "Mantenimiento y Mecánica"
-    ]
+    "explanation": "El embrague permite transmitir o interrumpir el movimiento desde el motor hacia la caja de cambios y, finalmente, a la rueda."
   },
   {
     "q": "Según la nueva normativa de 2026, ¿cuál es la sanción por no cumplir con el equipamiento obligatorio (guantes certificados)?",

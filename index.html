@@ -300,6 +300,93 @@
             .actions button { width: 100%; }
         }
 
+        /* ----- ASSISTANT UI ----- */
+        #assistantContainer {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            display: flex;
+            align-items: flex-end;
+            gap: 15px;
+            z-index: 1000;
+            pointer-events: none;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #assistantContainer.active {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: all;
+        }
+
+        .assistant-avatar {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--accent), #8B5CF6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            box-shadow: 0 10px 30px rgba(34, 211, 238, 0.4);
+            border: 4px solid var(--bg-color);
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .assistant-avatar::after {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            opacity: 0.3;
+            animation: assistantPulse 2s infinite;
+        }
+
+        @keyframes assistantPulse {
+            0% { transform: scale(1); opacity: 0.3; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+
+        .assistant-bubble {
+            background: rgba(20, 24, 34, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--accent);
+            border-radius: 20px 20px 0 20px;
+            padding: 15px 20px;
+            max-width: 300px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+            color: var(--text-main);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            position: relative;
+            margin-bottom: 40px;
+        }
+
+        .assistant-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            right: -8px;
+            border-left: 10px solid transparent;
+            border-top: 10px solid var(--accent);
+            transform: rotate(-135deg);
+        }
+        
+        .assistant-status {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            width: 18px;
+            height: 18px;
+            background: #10B981;
+            border-radius: 50%;
+            border: 3px solid var(--bg-color);
+            z-index: 2;
+        }
         .grid-cell {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--border);
@@ -416,6 +503,10 @@
             50% { transform: scale(1.2); opacity: 0.7; }
             100% { transform: scale(1); opacity: 1; }
         }
+
+        /* Feedback borders */
+        .success-border { border-color: var(--success) !important; background: var(--success-bg) !important; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+        .error-border { border-color: var(--error) !important; background: var(--error-bg) !important; box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
     </style>
 </head>
 <body>
@@ -471,6 +562,12 @@
                     <h3 style="color: #A855F7; margin-bottom: 5px; font-size: 1.1rem;">📚 Temas</h3>
                     <p style="font-size: 0.8rem; opacity: 0.7; margin-bottom: 10px;">Elige un tema específico.</p>
                     <button class="btn-primary" style="padding: 8px; font-size: 0.9rem; background: #9333EA;">Ver Temas</button>
+                </div>
+                <!-- MODO TUTOR -->
+                <div class="glass-panel" style="padding: 15px; grid-column: span 2; border: 1px solid var(--accent); background: rgba(34, 211, 238, 0.05); cursor: pointer;" onclick="startExam('tutor')">
+                    <h3 style="color: var(--accent); margin-bottom: 5px; font-size: 1.1rem;">🤖 Asistente IA / Tutor</h3>
+                    <p style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 10px;">Tu tutor personal. Te guiará, te corregirá al momento y te explicará tus fallos por voz.</p>
+                    <button class="btn-primary" style="padding: 10px; font-size: 1rem; background: var(--accent); color: #000;">Iniciar Tutoría</button>
                 </div>
             </div>
         </div>
@@ -543,232 +640,178 @@
         </div>
     </div>
 
+    <div id="assistantContainer">
+        <div class="assistant-bubble" id="assistantBubble"></div>
+        <div class="assistant-avatar">
+            🎓
+            <div class="assistant-status"></div>
+        </div>
+    </div>
+
     <script>
         let allQuestions = [];
         let questions = [];
         let currentIndex = 0;
         let userAnswers = [];
-        let timeRemaining = 20 * 60;
+        let timeRemaining = 1200; // 20 min
         let timerInterval;
         let audioActive = false;
+        let voiceActive = false;
         let examMode = 'standard';
         let currentCategory = null;
-        const synth = window.speechSynthesis;
-        let recognition = null;
-        let voiceActive = false;
-        let isListening = false;
-        let currentUtterance = null;
-        const stats = JSON.parse(localStorage.getItem('a2_stats')) || { totalExams: 0, passed: 0, failedQuestions: [] };
+        let stats = JSON.parse(localStorage.getItem('a2_stats')) || { totalExams: 0, passed: 0, failedQuestions: [] };
 
-        const DATABASE_QUESTIONS = [{"q": "¿Le está permitido conducir una motocicleta de potencia superior a 35 kilovatios, con el permiso de conducción de la clase A?", "opts": ["Si, pero solo tras tener una experiencia de al menos dos años con el permiso A.", "No, en ningún caso.", "Si, siempre que tenga una edad mínima de 20 años."], "ans": 2, "tags": ["Normativa y Documentación"]}, {"q": "¿Cuál de estos permisos autoriza a conducir triciclos de motor de potencia máxima superior a 15 kW?", "opts": ["El permiso de la clase A obtenido a partir de los 20 años", "El permiso de la clase A obtenido a partir de los 21 años", "El permiso de clase A1"], "ans": 1, "tags": ["Normativa y Documentación", "Mantenimiento y Mecánica"]}, {"q": "El permiso de la clase A1, ¿autoriza a conducir motocicletas con sidecar?", "opts": ["Sí, motocicletas de cilindrada máxima de 125 CC y potencia máxima de 11 KW", "Sí, motocicletas de cualquier cilindrada y potencia", "No"], "ans": 0, "tags": ["Normativa y Documentación"]}, {"q": "Por autopista, ¿qué luces llevará encendidas durante el día en su motocicleta?", "opts": ["La luz de carretera obligatoriamente", "La luz de cruce obligatoriamente", "La luz de posición o la de cruce, indistintamente."], "ans": 1, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Qué consecuencias tiene la pérdida de la totalidad de los puntos asignados al titular de un permiso?", "opts": ["La suspensión del permiso.", "La pérdida de vigencia del permiso.", "La baja definitiva del vehículo."], "ans": 1, "tags": ["Normativa y Documentación"]}, {"q": "Si al realizar la inspección técnica periódica de su motocicleta, el resultado es ITV desfavorable...", "opts": ["debe presentar la motocicleta a nueva inspección en la misma o diferente estación ITV en un plazo no superior a dos meses.", "puede presentar la motocicleta a nueva inspección en la misma estación ITV en el plazo inferior de 15 días.", "debe trasladar la motocicleta al taller empleando únicamente medios ajenos al propio vehículo."], "ans": 0, "tags": ["Normativa y Documentación"]}, {"q": "Si es titular, únicamente, del permiso de conducción de la clase A1 y desea conducir una motocicleta de 125 centímetros cúbicos de cilindrada y una potencia de 12 kilovatios, ¿le autoriza dicho permiso a conducirla?", "opts": ["No", "Sí", "Sólo estará permitido en vías fuera de poblado"], "ans": 0, "tags": ["Normativa y Documentación", "Equipamiento y Seguridad (2026)"]}, {"q": "Si usted circula con su motocicleta fuera de poblado y adelanta por la derecha a un autobús que pretende girar a la izquierda, debe saber que...", "opts": ["Está prohibido adelantar por la derecha", "Debe estar prevenido por si una vez sobrepasado el autobús, le afecta una posible ráfaga de viento lateral", "Al ser el autobús un vehículo pesado, deberá mantener con el mismo una separación lateral de dos metros como máximo"], "ans": 1, "tags": ["General"]}, {"q": "Si su hijo tiene 10 años de edad, ¿le está permitido transportarlo en su motocicleta debido a su edad?", "opts": ["Sí, pero solo en vías urbanas.", "Sí, por cualquier tipo de vía.", "No."], "ans": 1, "tags": ["Normativa y Documentación"]}, {"q": "¿Qué mantenimiento necesita la batería de una motocicleta con sistema de encendido por magneto?", "opts": ["Añadir ácido sulfúrico y agua destilada", "Ninguno, ya que ese tipo de motocicletas no necesitan batería", "Renovar el electrolito frecuentemente"], "ans": 1, "tags": ["Mantenimiento y Mecánica", "Equipamiento y Seguridad (2026)"]}, {"q": "¿Está permitido a una motocicleta circular por el arcén de una autovía?", "opts": ["Si, siempre que el conductor así lo decida y existan retenciones en la vía.", "No, en ningún caso.", "Si, cuando por avería circula a una velocidad anormalmente reducida."], "ans": 2, "tags": ["Normativa y Documentación"]}, {"q": "Un cuadriciclo de motor y de potencia superior a 15 kW, ¿podrá conducirse con el permiso de la clase A?", "opts": ["Sí, siempre que el titular del permiso haya cumplido los 21 años de edad", "Sí, aunque también podrá conducirse con el permiso de la clase AM", "No, para ello es necesario ser titular del permiso de la clase B"], "ans": 2, "tags": ["Normativa y Documentación", "Mantenimiento y Mecánica"]}, {"q": "Cuando circule por un carril VAO (carril para vehículos con alta ocupación) NO podrá...", "opts": ["llevar enganchado a la motocicleta un remolque.", "adelantar.", "superar los 80 km/h."], "ans": 0, "tags": ["Normativa y Documentación"]}, {"q": "¿Qué tipo de combustible utilizará una motocicleta que posee catalizador?", "opts": ["Gasolina con o sin plomo, siempre respetando el octanaje recomendado por el fabricante", "Gasolina sin plomo", "Gasolina con sustituto del plomo"], "ans": 1, "tags": ["Mantenimiento y Mecánica"]}, {"q": "El permiso de la clase A1 ¿autoriza conducir motocicletas con una cilindrada de 125 centímetros cúbicos y una potencia de 12 kilovatios?", "opts": ["Únicamente autorizará a los mayores de 25 años", "Sí", "No"], "ans": 2, "tags": ["Normativa y Documentación", "Equipamiento y Seguridad (2026)"]}, {"q": "¿En qué parte de una vía interurbana se podrá parar o estacionar una motocicleta?", "opts": ["Fuera de la calzada, dejando libre la parte transitable del arcén de la derecha.", "Fuera de la calzada, en la parte transitable del arcén derecho.", "Fuera de la calzada, dejando libre la parte transitable del arcén derecho o izquierdo."], "ans": 0, "tags": ["Normativa y Documentación"]}, {"q": "¿En qué tipo de vía suele producirse mayor número de accidentes con víctimas mortales?", "opts": ["En vías interurbanas", "En vías urbanas", "En autopistas y autovías"], "ans": 0, "tags": ["General"]}, {"q": "¿A qué velocidad máxima circularemos cuando la visibilidad de la parte delantera sea menor o igual de 50 metros a causa de la niebla?", "opts": ["80 kilómetros por hora", "30 kilómetros por hora", "50 kilómetros por hora"], "ans": 2, "tags": ["Normativa y Documentación"]}, {"q": "Su motocicleta tiene una anchura inferior a 1 metro. ¿Puede sobresalir la carga por la parte delantera y trasera de su motocicleta?", "opts": ["Por la delantera no; por la trasera hasta 0,25 metros", "Sí, hasta 0,50 metros tanto por la parte delantera como por la trasera", "No, en ningún caso"], "ans": 0, "tags": ["General"]}, {"q": "Su motocicleta dispone de sistema de frenado tanto en la rueda trasera como en la delantera. Habitualmente, ¿cuál de estos sistema tendrá un mayor desgaste durante la frenada?", "opts": ["El sistema de freno trasero", "El sistema de freno delantero", "Ambos sistemas se desgastarán de la misma forma"], "ans": 1, "tags": ["Técnicas de Conducción"]}, {"q": "¿Qué función desempeña la IMU (Unidad de control inercial) en una motocicleta?", "opts": ["Se encarga de reducir la aceleración en la salida para evitar el levantamiento de la rueda delantera.", "Permite que todos los demás sistemas electrónicos que tiene la motocicleta funcionen correctamente.", "Mide y ajusta únicamente la presión en tiempo real de los neumáticos."], "ans": 1, "tags": ["Mantenimiento y Mecánica"]}, {"q": "El embrague es el elemento mecánico encargado de acoplar:", "opts": ["El cigüeñal al diferencial transmisor.", "El cigüeñal al árbol de transmisión.", "El motor y el sistema de transmisión."], "ans": 2, "tags": ["Mantenimiento y Mecánica"]}, {"q": "Según la nueva normativa de 2026, ¿cuál es la sanción por no cumplir con el equipamiento obligatorio (guantes certificados)?", "opts": ["Multa de 100 euros y pérdida de 2 puntos.", "Multa de 200 euros y la pérdida de hasta 4 puntos.", "Multa de 500 euros y retirada de 6 puntos."], "ans": 1, "tags": ["Normativa y Documentación", "Equipamiento y Seguridad (2026)"]}, {"q": "¿Para qué usuarios es obligatorio el chaleco airbag en la conducción de motos según la actualización de 2026?", "opts": ["Alumnos y profesores de autoescuela durante las prácticas y exámenes.", "Todos los conductores en cualquier tipo de vía.", "Solo motocicletas de cilindrada superior a 500 cc."], "ans": 0, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Con qué fin se pueden utilizar sistemas intercomunicadores homologados en el casco?", "opts": ["Con fines de navegación.", "Con fines de ocio.", "Para comunicarse con otros vehículos de la vía."], "ans": 0, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Se puede conducir con el permiso A2 una motocicleta con sidecar?", "opts": ["Sí, de cualquier potencia o peso.", "No, está prohibido.", "Sí, si la potencia máxima no excede de 35 kilovatios."], "ans": 2, "tags": ["Normativa y Documentación"]}, {"q": "Si al realizar la inspección técnica periódica de su motocicleta, el resultado es ITV desfavorable...", "opts": ["Debe presentarla a nueva inspección en un plazo no superior a dos meses.", "Puede presentarla en el plazo inferior de 15 días.", "Debe trasladar la motocicleta al taller empleando medios ajenos."], "ans": 0, "tags": ["Normativa y Documentación"]}, {"q": "Si su motocicleta dispone de mandos independientes, ¿qué rueda frena el mando situado en el manillar?", "opts": ["La trasera.", "La delantera.", "Ambas ruedas simultáneamente."], "ans": 1, "tags": ["General"]}, {"q": "En la motocicleta, ¿qué carga se situará en la parte posterior?", "opts": ["La más voluminosa.", "La más pesada.", "La menos pesada."], "ans": 2, "tags": ["General"]}, {"q": "¿En qué tipo de vía suele producirse el mayor número de accidentes con víctimas mortales?", "opts": ["Vías interurbanas.", "Vías urbanas.", "Autopistas y autovías."], "ans": 0, "tags": ["General"]}, {"q": "¿Qué consecuencias tiene la pérdida de la totalidad de los puntos?", "opts": ["La suspensión temporal del permiso.", "La pérdida de vigencia del permiso.", "La baja definitiva del vehículo."], "ans": 1, "tags": ["Normativa y Documentación"]}, {"q": "¿Cómo se reparte el esfuerzo de frenado?", "opts": ["La rueda trasera soporta el mayor esfuerzo.", "Las dos ruedas se reparten por igual.", "La rueda delantera soporta el mayor esfuerzo."], "ans": 2, "tags": ["General"]}, {"q": "¿Cómo debe revisarse el nivel del aceite y refrigerante?", "opts": ["Terreno llano, moto en vertical y motor frío.", "Apoyada en pata de cabra y con el motor caliente.", "Motor caliente justo tras haber circulado."], "ans": 0, "tags": ["Mantenimiento y Mecánica", "Equipamiento y Seguridad (2026)"]}, {"q": "Si la cadena presenta holgura, ¿qué mantenimiento necesita?", "opts": ["Depende del fabricante.", "Debe tensarse y engrasarse periódicamente.", "Ninguno, debe tener holgura."], "ans": 1, "tags": ["Mantenimiento y Mecánica", "Equipamiento y Seguridad (2026)"]}, {"q": "¿Cuándo entran en funcionamiento de manera evidente las fuerzas centrífuga y centrípeta?", "opts": ["En línea recta.", "Al entrar y durante una curva.", "En frenadas de emergencia."], "ans": 1, "tags": ["Técnicas de Conducción", "Equipamiento y Seguridad (2026)"]}, {"q": "¿Está permitido transportar a un hijo de 10 años como pasajero?", "opts": ["Solo en vías urbanas.", "Sí, por cualquier tipo de vía.", "No, está prohibido."], "ans": 1, "tags": ["Normativa y Documentación"]}, {"q": "¿Cada cuánto se recomienda comprobar la presión de los neumáticos?", "opts": ["Al menos una vez al mes.", "Una vez al año.", "No es necesario."], "ans": 0, "tags": ["Mantenimiento y Mecánica"]}, {"q": "Caída a 25 km/h sin casco, ¿puede sufrir lesiones?", "opts": ["Sí, pero leves.", "Sí, lesiones craneales pero no cerebrales.", "Sí, tanto craneales como cerebrales graves."], "ans": 2, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Es obligatorio llevar rueda de repuesto en la moto?", "opts": ["Sí.", "Solo si hay espacio debajo del asiento.", "No."], "ans": 2, "tags": ["General"]}, {"q": "A 15 km/h, ¿el efecto giroscópico es...?", "opts": ["Menor, el conductor mantiene el equilibrio.", "Mayor, aumenta drásticamente.", "El principal causante del equilibrio."], "ans": 0, "tags": ["Técnicas de Conducción"]}, {"q": "Según las novedades reglamentarias, ¿con qué fin se pueden utilizar sistemas intercomunicadores homologados en el casco?", "opts": ["Con fines de navegación o comunicación, sin afectar a la seguridad de conducción.", "Exclusivamente con fines de ocio para escuchar música a gran volumen.", "Para comunicarse con otros vehículos y avisar de radares."], "ans": 0, "tags": ["Normativa y Documentación", "Equipamiento y Seguridad (2026)"]}, {"q": "Con la normativa de 2026, ¿qué requisito deben cumplir obligatoriamente los guantes para motoristas en vías interurbanas?", "opts": ["Deben ser de cuero sintético grueso sin necesidad de certificado.", "Deben llevar la etiqueta CE y cumplir con la normativa de protección EN 13594.", "Solo son obligatorios si la motocicleta supera los 35 kW de potencia."], "ans": 1, "tags": ["Normativa y Documentación", "Mantenimiento y Mecánica", "Equipamiento y Seguridad (2026)"]}, {"q": "En relación al chaleco airbag, según la normativa de 2026 de la DGT, ¿para quién es estrictamente obligatorio su uso?", "opts": ["Para todos los conductores de motocicletas en cualquier vía y circunstancia.", "Solo para conductores noveles durante su primer año de permiso.", "Para los alumnos y profesores de autoescuela durante las prácticas y exámenes del carnet A."], "ans": 2, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "Según las modificaciones previstas para 2026, ¿está permitido que las motocicletas circulen por el arcén en caso de retenciones?", "opts": ["Sí, a una velocidad máxima de 30 km/h y respetando siempre la prioridad de las bicicletas.", "Sí, a la velocidad máxima genérica de la vía siempre que utilicen las luces de emergencia.", "No, sigue estando terminantemente prohibido circular por el arcén en cualquier circunstancia."], "ans": 0, "tags": ["Normativa y Documentación", "Equipamiento y Seguridad (2026)"]}, {"q": "Con la entrada en vigor de la nueva normativa, ¿es posible no llevar el casco protector si se cuenta con un certificado médico?", "opts": ["Sí, siempre que el certificado médico esté actualizado y sea visible.", "No, la DGT ha eliminado cualquier tipo de exención médica para el uso del casco.", "Sí, pero solo para circular por vías urbanas a baja velocidad."], "ans": 1, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "Según la propuesta de la DGT para la nueva normativa, ¿cuál será la nueva tasa de alcohol máxima permitida para todos los conductores, incluidos los motoristas?", "opts": ["0,5 g/l en sangre o 0,25 mg/l de aire espirado.", "0,3 g/l en sangre o 0,15 mg/l de aire espirado.", "0,2 g/l en sangre o 0,1 mg/l de aire espirado."], "ans": 2, "tags": ["Mantenimiento y Mecánica"]}, {"q": "¿Es obligatorio llevar la baliza luminosa V-16 en las motocicletas según la normativa de 2026?", "opts": ["No es obligatoria por falta de espacio, pero sí muy recomendable.", "Sí, es obligatoria y sustituye definitivamente a los triángulos para las motos.", "Sí, pero únicamente si se circula por vías interurbanas en horario nocturno."], "ans": 0, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "Según la nueva normativa de 2026, ¿qué precaución extra se debe tomar al adelantar a un vehículo detenido o a ciclistas?", "opts": ["Acelerar rápidamente para permanecer el menor tiempo posible en el carril contrario.", "Reducir la velocidad al menos 20 km/h por debajo del límite de la vía y dejar 1,5 m de separación.", "Tocar el claxon repetidamente y ráfagas de luz antes de iniciar la maniobra."], "ans": 1, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Qué establece la normativa de 2026 respecto a conducir la motocicleta con chanclas o sandalias en verano?", "opts": ["Está permitido únicamente si se circula exclusivamente por vías urbanas.", "Está permitido si la motocicleta no supera los 125 cc.", "Está estrictamente prohibido en todo tipo de vías; se exige el uso de calzado cerrado."], "ans": 2, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "A partir de 2026, no llevar el equipamiento obligatorio (como guantes certificados o el casco debidamente abrochado) supone una infracción grave sancionada con:", "opts": ["Multa de 200 euros y la pérdida de 4 puntos del carnet de conducir.", "Multa de 100 euros sin pérdida de puntos.", "Multa de 500 euros y retirada del permiso de circulación por 3 meses."], "ans": 0, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Qué nueva homologación deben cumplir obligatoriamente los cascos nuevos que se vendan a partir de la nueva normativa de seguridad?", "opts": ["ECE 22.04", "ECE 22.06", "SNELL 2020"], "ans": 1, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Cuál es la potencia máxima permitida para una motocicleta que se vaya a conducir con el permiso A2?", "opts": ["11 kW", "15 kW", "35 kW"], "ans": 2, "tags": ["Normativa y Documentación"]}, {"q": "Según la nueva normativa de la DGT, para conducir una moto de hasta 125 cc teniendo solo el carnet B de coche, ¿qué será necesario?", "opts": ["Esperar a tener 5 años de antigüedad en el carnet B.", "Realizar un curso específico de formación, perdiendo validez la mera antigüedad de 3 años.", "Aprobar un examen teórico específico de motocicleta en Jefatura."], "ans": 1, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Cuál es la edad mínima exigida para poder obtener el permiso de conducción A2?", "opts": ["16 años", "21 años", "18 años"], "ans": 2, "tags": ["Normativa y Documentación"]}, {"q": "Además de la limitación de 35 kW, ¿qué relación potencia/peso máxima no debe superar una motocicleta para ser conducida con el permiso A2?", "opts": ["0,2 kW/kg", "0,1 kW/kg", "0,5 kW/kg"], "ans": 0, "tags": ["Normativa y Documentación"]}, {"q": "Si circulamos con un pasajero en la motocicleta, ¿qué efecto tiene sobre el sistema de frenado?", "opts": ["La distancia de frenado disminuye al haber más peso.", "Es más difícil que se bloquee la rueda trasera debido al aumento de peso en ese eje.", "Es más fácil que la motocicleta derrape de la rueda delantera al frenar suavemente."], "ans": 1, "tags": ["Normativa y Documentación"]}, {"q": "¿Cómo se debe comprobar correctamente el nivel del aceite y del líquido refrigerante de la motocicleta?", "opts": ["Con el motor en marcha y a su temperatura óptima de funcionamiento.", "Acelerando el motor en vacío reiteradamente.", "Con la motocicleta en posición vertical y el motor completamente frío."], "ans": 2, "tags": ["Mantenimiento y Mecánica", "Equipamiento y Seguridad (2026)"]}, {"q": "En el examen práctico de maniobras (circuito cerrado), ¿cuál es el tiempo máximo permitido para completar el circuito rápido?", "opts": ["25 segundos.", "30 segundos.", "35 segundos."], "ans": 0, "tags": ["Técnicas de Conducción", "Equipamiento y Seguridad (2026)"]}, {"q": "¿En qué situaciones concretas resulta más peligroso el viento para la conducción de una motocicleta?", "opts": ["Cuando sopla de frente a gran velocidad.", "Cuando sopla de costado, especialmente al salir de túneles o adelantar vehículos voluminosos.", "Cuando se circula en poblado entre edificios altos."], "ans": 1, "tags": ["Técnicas de Conducción"]}, {"q": "¿De qué forma se debe actuar sobre los mandos de los frenos de la motocicleta para una frenada segura?", "opts": ["Suavemente y de forma progresiva.", "De forma rápida y brusca en cualquier situación.", "Accionando primero y de golpe únicamente el freno trasero."], "ans": 0, "tags": ["Mantenimiento y Mecánica", "Técnicas de Conducción"]}, {"q": "¿Cuál es el equipamiento obligatorio exigido por la DGT a todos los aspirantes para poder realizar el examen práctico de moto?", "opts": ["Casco homologado, chaqueta y pantalón con protecciones, guantes y botas de caña alta.", "Casco homologado y guantes; el resto de prendas es meramente opcional.", "Casco homologado, chaleco reflectante y rodilleras."], "ans": 0, "tags": ["General"]}, {"q": "¿Están permitidos los pantalones vaqueros estándar para presentarse al examen práctico de moto de la DGT?", "opts": ["Sí, si son de tela gruesa y sin roturas.", "No, en ningún caso están permitidos; se exige pantalón de motorista homologado con protecciones.", "Sí, siempre que el aspirante lleve rodilleras de plástico por encima del pantalón."], "ans": 1, "tags": ["General"]}, {"q": "¿A qué velocidad máxima podrá circular con su motocicleta en una travesía con dos carriles para cada sentido y sin arcenes?", "opts": ["90 km/h", "100 km/h", "50 km/h"], "ans": 2, "tags": ["Normativa y Documentación", "Equipamiento y Seguridad (2026)"]}, {"q": "¿En qué caso un aspirante al carnet A2 está exento de realizar la prueba práctica de destreza en circuito cerrado?", "opts": ["Si tiene el permiso A1 con una antigüedad superior a 2 años.", "Si posee el permiso B (turismos) desde hace más de 3 años.", "Nunca, todos los aspirantes deben realizar obligatoriamente la prueba de circuito."], "ans": 0, "tags": ["Técnicas de Conducción", "Equipamiento y Seguridad (2026)"]}, {"q": "Si al realizar la inspección técnica periódica (ITV) de su motocicleta, el resultado es desfavorable...", "opts": ["Puede seguir circulando con total normalidad hasta la fecha de la próxima revisión anual.", "Debe presentar la motocicleta a una nueva inspección en un plazo no superior a dos meses tras subsanar los fallos.", "Debe trasladar inmediatamente la motocicleta al desguace o darla de baja definitiva."], "ans": 1, "tags": ["Normativa y Documentación"]}, {"q": "¿Podrán las motocicletas circular por un carril reservado para Vehículos de Alta Ocupación (VAO)?", "opts": ["Solo si llevan un pasajero en el asiento trasero.", "No, tienen prohibida la entrada por seguridad.", "Sí, las motocicletas están autorizadas a utilizar el carril VAO de manera general."], "ans": 2, "tags": ["Normativa y Documentación"]}, {"q": "Si su motocicleta tiene una anchura inferior a 1 metro, ¿puede sobresalir la carga por la parte delantera y trasera?", "opts": ["Por la parte trasera hasta 0,25 metros y por la parte delantera nada.", "Hasta 0,50 metros por delante y por detrás del vehículo.", "Nada, está terminantemente prohibido que la carga sobresalga longitudinalmente."], "ans": 0, "tags": ["General"]}, {"q": "¿Es obligatorio llevar rueda de repuesto o kit antipinchazos en una motocicleta?", "opts": ["Sí, llevar una rueda de repuesto es obligatorio.", "No, no es obligatorio llevar rueda de repuesto ni herramientas en una motocicleta.", "Sí, es obligatorio llevar al menos un kit reparapinchazos homologado."], "ans": 1, "tags": ["General"]}, {"q": "Si su hijo tiene 10 años de edad, ¿le está permitido transportarlo como pasajero en su motocicleta?", "opts": ["Solo en vías urbanas a baja velocidad.", "No, bajo ningún concepto está permitido llevar a menores de 12 años.", "Sí, está permitido por cualquier tipo de vía al ser mayor de 7 años y viajar con su progenitor."], "ans": 2, "tags": ["Normativa y Documentación"]}, {"q": "En caso de sufrir una caída inevitable con la motocicleta, ¿cuál es la mejor forma de actuar una vez en el suelo?", "opts": ["Relajarse y deslizarse por el asfalto hasta detenerse por completo sin intentar rodar.", "Intentar levantarse de inmediato antes de detenerse para salir de la vía.", "Rodar rápidamente el cuerpo para crear mayor fricción y frenar antes."], "ans": 0, "tags": ["General"]}, {"q": "¿Está permitido zigzaguear con la motocicleta sorteando coches en caso de existir circulación densa o un atasco?", "opts": ["Sí, siempre que no se superen los 30 km/h de velocidad.", "No, realizar zigzag entre vehículos está prohibido.", "Sí, es la principal ventaja y justificación de circular en motocicleta."], "ans": 1, "tags": ["Técnicas de Conducción"]}, {"q": "Al efectuar una frenada convencional con la motocicleta, ¿cómo se reparte habitualmente el esfuerzo de retención?", "opts": ["A partes iguales y simétricas entre ambas ruedas.", "El mayor esfuerzo recae obligatoriamente sobre la rueda trasera.", "El mayor esfuerzo de frenada recae sobre la rueda delantera por la transferencia de pesos."], "ans": 2, "tags": ["Técnicas de Conducción"]}, {"q": "¿Qué tipo de combustible debe utilizar obligatoriamente una motocicleta equipada con catalizador?", "opts": ["Gasolina sin plomo.", "Gasolina con sustituto de plomo o aditivos pesados.", "Cualquier tipo de gasolina independientemente del octanaje."], "ans": 0, "tags": ["Mantenimiento y Mecánica"]}, {"q": "En el examen de circuito cerrado, ¿en qué consiste la prueba inicial conocida como manejo a motor parado o 'la L'?", "opts": ["En arrancar, acelerar y frenar en línea recta sin poner los pies en el suelo.", "En quitar el soporte y empujar la moto apagada hacia adelante y luego hacia atrás girando el manillar para estacionarla.", "En realizar un giro de 180 grados a pie, levantando la rueda delantera."], "ans": 1, "tags": ["Mantenimiento y Mecánica", "Técnicas de Conducción", "Equipamiento y Seguridad (2026)"]}, {"q": "¿Qué función de seguridad esencial cumple el sistema ABS en una motocicleta?", "opts": ["Disminuir el consumo de combustible en vías interurbanas.", "Aumentar la potencia de aceleración en caso de emergencia.", "Evitar que las ruedas se bloqueen durante una frenada fuerte o de emergencia, manteniendo la direccionalidad."], "ans": 2, "tags": ["Mantenimiento y Mecánica"]}, {"q": "Al iniciar la marcha en la prueba práctica, ¿cuál es un motivo directo de falta eliminatoria (E) relacionado con la propia motocicleta?", "opts": ["No recoger totalmente el soporte (pata de cabra o caballete central) antes de salir.", "No limpiar exhaustivamente los espejos retrovisores.", "Acelerar en vacío una vez antes de iniciar el desplazamiento."], "ans": 0, "tags": ["General"]}, {"q": "Si circula por una vía fuera de poblado y desea adelantar a un autobús que está indicando su intención de girar a la izquierda, ¿cómo debe actuar?", "opts": ["Avisar con el claxon y adelantar rápidamente por el lado izquierdo.", "Puede adelantarle por la derecha extremando siempre las precauciones y dejando el margen adecuado.", "Debe esperar pacientemente detrás del autobús sin rebasarlo en ningún caso."], "ans": 1, "tags": ["General"]}, {"q": "¿Para qué sirve el cuentarrevoluciones situado en el tablero de instrumentos de la motocicleta?", "opts": ["Para medir la velocidad exacta a la que circulamos en tiempo real.", "Para conocer el nivel y la presión del líquido refrigerante.", "Para conocer el número de revoluciones del motor y realizar los cambios de marcha en el régimen óptimo."], "ans": 2, "tags": ["General"]}, {"q": "¿Por qué es altamente recomendable utilizar indumentaria y cascos de colores claros, vivos o reflectantes?", "opts": ["Para mejorar notablemente la visibilidad del motorista por parte del resto de usuarios de la vía.", "Porque este tipo de colores protegen mejor contra las abrasiones del asfalto.", "Porque reducen eficazmente la resistencia aerodinámica al viento lateral."], "ans": 0, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "¿Por qué es muy peligrosa la conducción cuando caen las primeras gotas de lluvia?", "opts": ["La mezcla de agua y polvo forma un barro muy deslizante en la calzada.", "Aumenta instantáneamente el efecto de aquaplaning.", "Los frenos de la motocicleta pierden toda su eficacia de manera súbita."], "ans": 0, "tags": ["General"]}, {"q": "Al conducir una motocicleta con hielo en la calzada, ¿cuánto puede llegar a aumentar la distancia de frenado?", "opts": ["Hasta el doble.", "Hasta 5 veces más.", "Hasta 10 veces más."], "ans": 2, "tags": ["General"]}, {"q": "Circular en motocicleta con una temperatura exterior de 35 ºC supone un peligro similar a...", "opts": ["Conducir con una tasa de alcohol de 0,5 g/l.", "Conducir con mucha fatiga acumulada durante la noche.", "Circular superando el límite de velocidad en 30 km/h."], "ans": 0, "tags": ["General"]}, {"q": "Si conduce su motocicleta y el viento sopla fuertemente de costado, ¿cómo debe actuar para mantener la trayectoria?", "opts": ["Mantener la trayectoria frenando bruscamente.", "Vencer el empuje girando el manillar en la dirección desde donde sopla el viento.", "Acelerar fuertemente para aumentar la estabilidad aerodinámica."], "ans": 1, "tags": ["Técnicas de Conducción", "Equipamiento y Seguridad (2026)"]}, {"q": "¿En qué situaciones es más peligroso el viento lateral al circular en motocicleta?", "opts": ["Únicamente al circular a baja velocidad en zona urbana.", "En rectas prolongadas donde no haya tráfico en sentido contrario.", "Al cruzarse con otros vehículos o al adelantar a vehículos voluminosos."], "ans": 2, "tags": ["Técnicas de Conducción"]}, {"q": "Si los elementos frenantes de su motocicleta se mojan debido a la lluvia, ¿qué precaución debe tomar?", "opts": ["Secarlos frenando suavemente a intervalos regulares.", "Evitar usar los frenos y detener la motocicleta usando solo el freno motor.", "Realizar frenadas bruscas para generar calor rápido en los discos."], "ans": 0, "tags": ["General"]}, {"q": "¿Qué consecuencias tiene circular con el sistema de suspensión de la motocicleta en malas condiciones?", "opts": ["Disminuye la distancia de frenado en pavimentos mojados.", "El vehículo pierde estabilidad, en especial en las curvas y cuando hay viento.", "El desgaste de los neumáticos se detiene por completo."], "ans": 1, "tags": ["General"]}, {"q": "Un sistema de suspensión en mal estado, ¿influye en el riesgo de sufrir aquaplaning?", "opts": ["Sí, hay más riesgo de sufrir aquaplaning.", "No, la suspensión no afecta en absoluto a la evacuación del agua.", "No, el riesgo de aquaplaning solo aumenta si la suspensión está demasiado dura."], "ans": 0, "tags": ["General"]}, {"q": "¿Cuál es un riesgo directo de circular con una presión de inflado en los neumáticos muy inferior a la recomendada?", "opts": ["Mayor riesgo de que el neumático reviente o la rueda se deteriore gravemente.", "Menor desgaste del dibujo en los bordes del neumático.", "Aumento en la eficacia del sistema antibloqueo de frenos (ABS)."], "ans": 0, "tags": ["Mantenimiento y Mecánica"]}, {"q": "Si nota que se pincha una rueda de su motocicleta mientras circula, ¿cómo debe actuar?", "opts": ["Frenar de emergencia para detener la motocicleta inmediatamente.", "Reducir la velocidad de forma lenta hasta parar el vehículo en un lugar seguro.", "Soltar el manillar e intentar equilibrar la motocicleta inclinando el cuerpo."], "ans": 1, "tags": ["General"]}, {"q": "¿En qué consiste la función principal del sistema antibloqueo de frenos (ABS) en una motocicleta?", "opts": ["Frena automáticamente si detecta un obstáculo en la calzada.", "Evita que las ruedas se bloqueen al frenar, ayudando a mantener el control.", "Reparte automáticamente el peso entre las dos ruedas al detener el vehículo."], "ans": 1, "tags": ["Mantenimiento y Mecánica"]}, {"q": "Al circular con un pasajero en la motocicleta, el vehículo lleva más carga. ¿Cómo afecta este peso al bloqueo de las ruedas al frenar?", "opts": ["Es mucho más fácil que se bloqueen las ruedas.", "Cuanto más peso hay, más difícil es que se bloqueen las ruedas al frenar.", "El peso no influye en absoluto en el bloqueo ni en la frenada."], "ans": 1, "tags": ["Normativa y Documentación"]}, {"q": "En una frenada de emergencia con una motocicleta que NO dispone de sistema ABS, si nota que la rueda empieza a bloquearse, ¿qué debe hacer?", "opts": ["Levantar un poco el freno para evitar que la rueda se bloquee, pero sin dejar de frenar.", "Pisar o apretar la maneta del freno con el doble de fuerza para detenerse antes.", "Soltar el freno por completo hasta que el motor detenga la motocicleta por inercia."], "ans": 0, "tags": ["Mantenimiento y Mecánica", "Técnicas de Conducción", "Equipamiento y Seguridad (2026)"]}, {"q": "¿Es recomendable usar el freno motor en bajadas largas y pronunciadas?", "opts": ["Sí, es recomendable usar el freno motor al bajar cuestas largas para evitar que los frenos se calienten.", "No, porque desgasta prematuramente el sistema de suspensión.", "No, ya que puede provocar el bloqueo automático de la rueda trasera."], "ans": 0, "tags": ["Mantenimiento y Mecánica"]}, {"q": "¿Qué advierte la señal triangular de peligro (P-34) con el símbolo de un copo de nieve?", "opts": ["Peligro porque una zona de la calzada está muy deslizante por hielo o nieve.", "Obligación de utilizar neumáticos de invierno o cadenas en ese tramo.", "Prohibición de circular a vehículos de dos ruedas por riesgo de nevadas."], "ans": 0, "tags": ["General"]}, {"q": "Al observar la señal de peligro con el dibujo de una manga de viento (P-29), el conductor de la moto debe saber que...", "opts": ["Hay peligro por un fuerte viento que sopla siempre de frente.", "Hay peligro por viento fuerte de costado.", "Existe peligro por obras que afectan a la aerodinámica de la calzada."], "ans": 1, "tags": ["Técnicas de Conducción"]}, {"q": "¿Qué significa la señal triangular con borde rojo y el símbolo de una bicicleta (P-22)?", "opts": ["Vía exclusiva y obligatoria para la circulación de ciclistas.", "Prohibición de entrada o circulación para bicicletas.", "Peligro por un lugar por donde pasan o cruzan ciclistas con frecuencia."], "ans": 2, "tags": ["General"]}, {"q": "Si debe circular con su motocicleta por una carretera nevada, ¿cuál es la trayectoria más segura?", "opts": ["Circular por la zona con nieve virgen para mejorar el agarre.", "Circular por encima de las marcas que han dejado otros vehículos con sus ruedas.", "Circular exclusivamente por el arcén para evitar las placas de hielo del centro."], "ans": 1, "tags": ["General"]}, {"q": "¿Cuál de estas situaciones aumenta significativamente el riesgo de que una motocicleta sufra 'aquaplaning'?", "opts": ["Circular a poca velocidad con neumáticos nuevos.", "Circular a mucha velocidad cuando los neumáticos son muy anchos o están desgastados.", "Llevar una presión de neumáticos superior a la que recomienda el fabricante."], "ans": 1, "tags": ["General"]}, {"q": "Si al hacer las comprobaciones previas observa que la cadena de transmisión presenta una holgura excesiva, ¿qué debe hacer?", "opts": ["Engrasarla abundantemente sin realizar ningún ajuste de tensión.", "Ignorarlo, ya que la cadena se ajusta sola por efecto de la fuerza centrífuga.", "Necesita mantenimiento para ajustar la tensión y evitar problemas mecánicos o roturas."], "ans": 2, "tags": ["Mantenimiento y Mecánica", "Equipamiento y Seguridad (2026)"]}, {"q": "Una marca vial en la calzada consistente en la palabra 'BUS' pintada en blanco indica:", "opts": ["Que es una zona de parada exclusiva y obligatoria para todos los vehículos pesados.", "Que el carril está reservado para la circulación de determinados vehículos, como autobuses.", "Prohibición total de adelantar a autobuses en ese tramo de vía."], "ans": 1, "tags": ["General"]}, {"q": "¿Puede el mal estado del sistema de suspensión provocar que las luces de la motocicleta deslumbren a otros usuarios?", "opts": ["No, el haz de luz se ajusta independientemente del estado de los amortiguadores.", "Sí, porque las luces se mueven hacia arriba y hacia abajo constantemente.", "Solo pueden deslumbrar si la motocicleta lleva luces halógenas."], "ans": 1, "tags": ["Equipamiento y Seguridad (2026)"]}, {"q": "Al circular de noche, si se ve deslumbrado por los faros del vehículo que circula en sentido contrario, ¿cómo debe actuar?", "opts": ["Moderar la velocidad, llegando incluso a detener la motocicleta si fuera necesario.", "Encender sus luces de largo alcance para advertir del deslumbramiento al otro conductor.", "Ponerse gafas oscuras o mirar fijamente al faro del vehículo para acostumbrar la vista."], "ans": 0, "tags": ["General"]}, {"q": "La señal circular con fondo azul y el dibujo de un neumático con cadenas (R-412) prohíbe pasar sin cadenas. ¿Dónde deben colocarse?", "opts": ["Únicamente en la rueda delantera por ser la directriz.", "Obligatoriamente en las ruedas motrices del vehículo.", "No es aplicable a motocicletas, ya que tienen prohibido circular con nieve."], "ans": 1, "tags": ["Mantenimiento y Mecánica"]}, {"q": "El desgaste irregular o rápido de los neumáticos de la motocicleta puede verse afectado por...", "opts": ["Circular por pavimentos en perfecto estado y con buena climatología.", "Mantener una conducción preventiva, suave y eficiente.", "Conducir de forma brusca, a mucha velocidad o con una presión de inflado incorrecta."], "ans": 2, "tags": ["Mantenimiento y Mecánica"]}];
+        const synth = window.speechSynthesis;
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'es-ES';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+        }
 
         async function initApp() {
             try {
+                // Forzar carga local o remota
                 const response = await fetch('questions.json');
-                if (response.ok) {
-                    allQuestions = await response.json();
-                } else {
-                    allQuestions = DATABASE_QUESTIONS;
-                }
-            } catch (error) {
-                console.warn('Usando base de datos interna (CORS o error de red)');
-                allQuestions = DATABASE_QUESTIONS;
+                if (!response.ok) throw new Error("Local questions file not found");
+                allQuestions = await response.json();
+                console.log("Banco de preguntas cargado:", allQuestions.length);
+            } catch (err) {
+                console.warn("Error cargando JSON, usando backup...", err);
+                allQuestions = [
+                    {
+                        "q": "¿Qué consecuencias tiene la pérdida de la totalidad de los puntos?",
+                        "opts": ["La suspensión del permiso.", "La pérdida de vigencia del permiso.", "La baja definitiva del vehículo."],
+                        "ans": 1,
+                        "explanation": "La pérdida total de puntos conlleva la pérdida de vigencia del permiso. Deberás realizar un curso de sensibilización para recuperarlo."
+                    },
+                    {
+                        "q": "El permiso A1, ¿autoriza a conducir motocicletas con sidecar?",
+                        "opts": ["Sí, de hasta 125cc y 11kW.", "Sí, de cualquier cilindrada.", "No."],
+                        "ans": 0,
+                        "explanation": "El A1 permite motos de hasta 125cc y 11kW, tengan sidecar o no."
+                    },
+                    {
+                        "q": "¿A qué velocidad máxima circularemos con visibilidad de 50 metros por niebla?",
+                        "opts": ["80 km/h.", "30 km/h.", "50 km/h."],
+                        "ans": 2,
+                        "explanation": "Con visibilidad reducida a 50 metros o menos por niebla espesa, la velocidad máxima segura es de 50 km/h."
+                    }
+                ];
             }
-            updateStatsUI();
+            renderStats();
         }
 
-        // --- SISTEMA DE IA DE VOZ ---
-        function toggleVoice() {
-            voiceActive = !voiceActive;
-            const btn = document.getElementById('voiceTogglePanel');
-            const txt = document.getElementById('voiceStatusText');
-            if (voiceActive) {
-                btn.classList.add('voice-active');
-                txt.innerText = 'Escuchando activo. Responderás con voz.';
-                initRecognition();
-            } else {
-                btn.classList.remove('voice-active');
-                txt.innerText = 'Inactivo. Haz clic para activar escuchado.';
-                if (recognition) recognition.stop();
-            }
+        function renderStats() {
+            const cont = document.getElementById('statsContainer');
+            if (!cont) return;
+            const perc = stats.totalExams > 0 ? Math.round((stats.passed / stats.totalExams) * 100) : 0;
+            cont.innerHTML = `
+                <div style="display: flex; gap: 20px; margin-bottom: 30px; background: rgba(255,255,255,0.03); padding: 20px; border-radius: 16px;">
+                    <div><span style="display:block; font-size:1.5rem; font-weight:700; color:var(--accent);">${stats.totalExams}</span><span style="font-size:0.8rem; color:var(--text-muted);">Exámenes</span></div>
+                    <div><span style="display:block; font-size:1.5rem; font-weight:700; color:var(--success);">${perc}%</span><span style="font-size:0.8rem; color:var(--text-muted);">Efectividad</span></div>
+                    <div><span style="display:block; font-size:1.5rem; font-weight:700; color:#EAB308;">${stats.failedQuestions.length}</span><span style="font-size:0.8rem; color:var(--text-muted);">Fallos</span></div>
+                </div>
+            `;
         }
 
-        function initRecognition() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) {
-                alert("Tu navegador no soporta reconocimiento de voz.");
+        function showAssistantMessage(text) {
+            const container = document.getElementById('assistantContainer');
+            const bubble = document.getElementById('assistantBubble');
+            container.classList.add('active');
+            bubble.innerText = text;
+            bubble.classList.remove('fade-in');
+            void bubble.offsetWidth;
+            bubble.classList.add('fade-in');
+        }
+
+        function speakText(text, callback) {
+            if (!audioActive && !voiceActive && examMode !== 'tutor') {
+                if(callback) callback();
                 return;
             }
-            if (!recognition) {
-                recognition = new SpeechRecognition();
-                recognition.lang = 'es-ES';
-                recognition.interimResults = false;
-                recognition.continuous = false;
-                recognition.onstart = () => { 
-                    isListening = true; 
-                    const quiz = document.getElementById('quizScreen');
-                    if (quiz) quiz.classList.add('listening');
-                };
-                recognition.onend = () => { 
-                    isListening = false; 
-                    const quiz = document.getElementById('quizScreen');
-                    if (quiz) quiz.classList.remove('listening');
-                };
-                recognition.onresult = (event) => {
-                    const command = event.results[0][0].transcript.toLowerCase();
-                    processVoiceCommand(command);
-                };
-                recognition.onerror = () => {
-                    isListening = false;
-                };
-            }
+            synth.cancel();
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'es-ES';
+            utter.rate = 1.0;
+            utter.onend = () => { if (callback) callback(); };
+            synth.speak(utter);
         }
 
-        function startListening() {
-            if (voiceActive && recognition && !isListening) {
-                try { recognition.start(); } catch(e) {}
-            }
-        }
-
-        function processVoiceCommand(cmd) {
-            console.log('Comando de voz:', cmd);
-            if (!questions || questions.length === 0) return;
-            const q = questions[currentIndex];
+        function speakFeedback(isCorrect, explanation, callback) {
+            const msg = isCorrect 
+                ? "¡Correcto! Muy bien hecho." 
+                : "Esa no es la correcta. Escucha la explicación.";
             
-            // Repetir
-            if (cmd.includes('repetir') || cmd.includes('repite')) {
-                if (cmd.includes('pregunta')) { repeatAudio(); return; }
-                if (cmd.includes('opción a') || cmd.includes('la a')) { readSingleOption(0); return; }
-                if (cmd.includes('opción b') || cmd.includes('la b')) { readSingleOption(1); return; }
-                if (cmd.includes('opción c') || cmd.includes('la c')) { readSingleOption(2); return; }
-            }
-
-            // Seleccionar
-            if (cmd.includes('la a') || cmd === 'a' || cmd === 'alfa') { selectOption(0); return; }
-            if (cmd.includes('la b') || cmd === 'b' || cmd === 'bravo') { selectOption(1); return; }
-            if (cmd.includes('la c') || cmd === 'c' || cmd === 'charlie' || cmd.includes('cocos')) { selectOption(2); return; }
-
-            // Navegar
-            if (cmd.includes('siguiente')) { navigate(1); return; }
-            if (cmd.includes('anterior')) { navigate(-1); return; }
-
-            // Fallback
-            speakText('No te he entendido. ¿Qué alternativa eliges?', () => startListening());
-        }
-
-        function readSingleOption(idx) {
-            stopAudio();
-            const opts = document.querySelectorAll('.option');
-            opts.forEach(o => o.classList.remove('reading-active'));
-            opts[idx].classList.add('reading-active');
-            const letter = ['A','B','C'][idx];
-            speakText(`Repitiendo Opción ${letter}: ${questions[currentIndex].opts[idx]}. ¿Qué alternativa eliges?`, () => startListening());
-        }
-
-        function updateStatsUI() {
-            const container = document.getElementById('statsContainer');
-            if (stats.totalExams > 0) {
-                container.innerHTML = `
-                    <div style="margin: 20px 0; padding: 15px; background: rgba(34, 211, 238, 0.05); border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2);">
-                        <p style="margin: 0; font-size: 0.9rem; color: var(--accent);">📊 Tu Progreso</p>
-                        <div style="display: flex; gap: 20px; margin-top: 10px; font-size: 0.85rem;">
-                            <span><strong>${stats.totalExams}</strong> Tests</span>
-                            <span><strong>${stats.passed}</strong> Aptos</span>
-                            <span><strong>${Math.round((stats.passed/stats.totalExams)*100)}%</strong> Éxito</span>
-                            <span><strong>${stats.failedQuestions.length}</strong> Fallos</span>
-                        </div>
-                    </div>
-                `;
-            }
-
-            // Update Smart Review button state
-            const smartBtn = document.getElementById('smartReviewPanel');
-            if (stats.failedQuestions.length === 0) {
-                smartBtn.style.opacity = '0.5';
-                smartBtn.style.pointerEvents = 'none';
-                smartBtn.querySelector('p').innerText = 'Sin fallos registrados.';
-            }
-        }
-
-        function showCategorySelector() {
-            const themes = [...new Set(allQuestions.flatMap(q => q.tags || []))];
-            const grid = document.getElementById('categoryGrid');
-            grid.innerHTML = themes.map(t => {
-                const count = allQuestions.filter(q => q.tags && q.tags.includes(t)).length;
-                return `
-                    <div class="option" onclick="startExam('category', '${t}')" style="margin:0;">
-                        <span style="color:var(--accent); margin-right:10px;">•</span> ${t} (${count} preguntas)
-                    </div>
-                `;
-            }).join('');
-            document.getElementById('categoryModal').classList.add('active');
-        }
-
-        function closeCategoryModal() {
-            document.getElementById('categoryModal').classList.remove('active');
+            showAssistantMessage(msg);
+            speakText(msg, () => {
+                if (explanation) {
+                    showAssistantMessage(explanation);
+                    speakText(explanation, callback);
+                } else if (callback) callback();
+            });
         }
 
         function toggleAudioMode() {
             audioActive = !audioActive;
             const btn = document.getElementById('audioToggle');
-            const icon = document.getElementById('audioIcon');
-            const replayBtn = document.getElementById('btnReplay');
-            
             if (audioActive) {
                 btn.classList.add('active');
                 btn.innerHTML = `<span>🔊</span> Audio On`;
-                replayBtn.style.display = 'block';
-                if (document.getElementById('quizScreen').offsetParent !== null) speakSequentially();
             } else {
                 btn.classList.remove('active');
                 btn.innerHTML = `<span>🔈</span> Audio Off`;
-                replayBtn.style.display = 'none';
-                stopAudio();
             }
         }
 
-        function stopAudio() {
-            if (synth.speaking) synth.cancel();
-            document.querySelectorAll('.option').forEach(o => o.classList.remove('reading-active'));
+        function toggleVoice() {
+            if (!recognition) {
+                alert("Tu navegador no soporta reconocimiento de voz.");
+                return;
+            }
+            voiceActive = !voiceActive;
+            const panel = document.getElementById('voiceTogglePanel');
+            const text = document.getElementById('voiceStatusText');
+            if (voiceActive) {
+                panel.classList.add('voice-active');
+                text.innerText = "Modo Manos Libres Activo";
+                audioActive = true; 
+            } else {
+                panel.classList.remove('voice-active');
+                text.innerText = "Activar Modo Manos Libres";
+            }
         }
 
-        function repeatAudio() {
-            stopAudio();
-            speakSequentially();
+        function startListening() {
+            if (!voiceActive || !recognition) return;
+            try {
+                recognition.start();
+                document.getElementById('quizScreen').classList.add('listening');
+            } catch(e) {}
+            
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript.toLowerCase();
+                document.getElementById('quizScreen').classList.remove('listening');
+                console.log("Voz detectada:", transcript);
+                if (transcript.includes('alfa') || transcript.includes('la a') || transcript.includes('opción a')) selectOption(0);
+                else if (transcript.includes('bravo') || transcript.includes('la b') || transcript.includes('opción b')) selectOption(1);
+                else if (transcript.includes('charlie') || transcript.includes('la c') || transcript.includes('opción c')) selectOption(2);
+                else if (transcript.includes('repetir')) loadQuestion(currentIndex);
+            };
+            recognition.onerror = () => document.getElementById('quizScreen').classList.remove('listening');
+            recognition.onend = () => document.getElementById('quizScreen').classList.remove('listening');
         }
 
-        
-        function getBestVoice() {
-            const voices = window.speechSynthesis.getVoices();
-            // Prioridad: Voces premium (Siri, Google, o Monica) en español
-            const priority = ['Siri', 'Monica', 'Google', 'Paulina', 'Luciana', 'Helena'];
-            let best = voices.find(v => v.lang.startsWith('es') && priority.some(p => v.name.includes(p)));
-            if (!best) best = voices.find(v => v.lang.startsWith('es'));
-            return best;
-        }
-
-        function speakText(text, callback) {
-            const ut = new SpeechSynthesisUtterance(text);
-            ut.lang = 'es-ES';
-            ut.rate = 1.0;
-            ut.onend = callback;
-            currentUtterance = ut;
-            synth.speak(ut);
-        }
-
-        
         function speakSequentially() {
-            if (!audioActive) return;
             const q = questions[currentIndex];
-            stopAudio();
             speakText(q.q, () => {
                 let optIdx = 0;
-                const opts = document.querySelectorAll('.option');
                 const readNextOption = () => {
-                    if (optIdx >= q.opts.length || !audioActive) return;
-                    
+                    const opts = document.querySelectorAll('.option');
                     opts.forEach(o => o.classList.remove('reading-active'));
-                    opts[optIdx].classList.add('reading-active');
+                    if (opts[optIdx]) opts[optIdx].classList.add('reading-active');
                     
                     const letter = ['A', 'B', 'C'][optIdx];
                     speakText(`Opción ${letter}: ${q.opts[optIdx]}`, () => {
@@ -777,11 +820,7 @@
                             setTimeout(readNextOption, 600);
                         } else {
                             opts.forEach(o => o.classList.remove('reading-active'));
-                            if (voiceActive) {
-                                setTimeout(() => {
-                                    speakText('¿Qué alternativa eliges?', () => startListening());
-                                }, 500);
-                            }
+                            if (voiceActive) setTimeout(startListening, 500);
                         }
                     });
                 };
@@ -789,60 +828,43 @@
             });
         }
 
-
         function startExam(mode, category = null) {
             examMode = mode;
-            currentCategory = category;
-            closeCategoryModal();
-
-            // Configurar modo
-            if (mode === 'audio') {
-                audioActive = true;
-                if (!voiceActive) toggleVoice(); // Auto-activar reconocimiento en modo audio
-                const btn = document.getElementById('audioToggle');
-                btn.classList.add('active');
-                btn.innerHTML = `<span>🔊</span> Audio On`;
-                document.getElementById('btnReplay').style.display = 'block';
-                document.getElementById('timerDisplay').style.opacity = '0.3'; 
-            } else {
-                audioActive = false;
-                document.getElementById('timerDisplay').style.opacity = '1';
-                if (!mode.includes('smart')) document.getElementById('audioToggle').classList.remove('active');
-            }
-
-            // Seleccionar preguntas
+            currentIndex = 0;
+            timeRemaining = 1200;
+            
             if (mode === 'smart') {
                 questions = allQuestions.filter(q => stats.failedQuestions.includes(q.q));
-                if (questions.length > 20) questions = questions.sort(() => 0.5 - Math.random()).slice(0, 20);
+                if (questions.length === 0) {
+                    alert("Aún no tienes fallos guardados.");
+                    return;
+                }
             } else if (mode === 'category') {
                 questions = allQuestions.filter(q => q.tags && q.tags.includes(category));
-                if (questions.length > 20) questions = questions.sort(() => 0.5 - Math.random()).slice(0, 20);
             } else {
                 questions = [...allQuestions].sort(() => Math.random() - 0.5).slice(0, 20);
             }
 
-            if (questions.length === 0) {
-                alert("No hay preguntas disponibles para este modo.");
-                return;
-            }
-
             userAnswers = new Array(questions.length).fill(null);
-            
             document.getElementById('introScreen').classList.add('hidden');
-            const quiz = document.getElementById('quizScreen');
-            quiz.classList.remove('hidden');
-            quiz.classList.add('fade-in');
-            
+            document.getElementById('quizScreen').classList.remove('hidden');
             document.getElementById('timerDisplay').style.display = 'block';
+            
             initGrid();
             loadQuestion(0);
-            
+
+            if (mode === 'tutor') {
+                const intro = "Hola, soy tu tutor virtual. Te guiaré en este examen, corregiré tus respuestas al momento y te explicaré tus fallos. ¡Empecemos!";
+                showAssistantMessage(intro);
+                speakText(intro);
+            }
+
             timerInterval = setInterval(() => {
                 timeRemaining--;
                 let m = Math.floor(timeRemaining / 60).toString().padStart(2, '0');
                 let s = (timeRemaining % 60).toString().padStart(2, '0');
                 document.getElementById('timerDisplay').innerText = `${m}:${s}`;
-                if(timeRemaining <= 0) submitExam();
+                if (timeRemaining <= 0) submitExam();
             }, 1000);
         }
 
@@ -859,50 +881,25 @@
         }
 
         function loadQuestion(index) {
-            stopAudio();
             currentIndex = index;
             const q = questions[index];
+            document.getElementById('qNumber').innerText = `Pregunta ${index + 1} de ${questions.length}`;
+            document.getElementById('progressBar').style.width = `${((index + 1) / questions.length) * 100}%`;
+            document.getElementById('qText').innerText = q.q;
             
-            const qNum = document.getElementById('qNumber');
-            const qText = document.getElementById('qText');
-            const optsContainer = document.getElementById('optionsContainer');
-            
-            qText.classList.remove('fade-in');
-            void qText.offsetWidth;
-            qText.classList.add('fade-in');
-            
-            qNum.innerText = `Pregunta ${index + 1} de ${questions.length}`;
-            const prog = ((index + 1) / questions.length) * 100;
-            document.getElementById('progressBar').style.width = `${prog}%`;
-
-            qText.innerText = q.q;
-            const imgCont = document.getElementById('qImageContainer');
-            const imgEl = document.getElementById('qImage');
-            if (q.img) {
-                imgEl.src = q.img;
-                imgCont.classList.remove('hidden');
-            } else {
-                imgCont.classList.add('hidden');
-            }
-
-            
-            optsContainer.innerHTML = '';
+            const optionsCont = document.getElementById('optionsContainer');
+            optionsCont.innerHTML = '';
             q.opts.forEach((opt, idx) => {
-                const optEl = document.createElement('div');
-                optEl.className = 'option fade-in';
-                optEl.style.animationDelay = `${idx * 0.1}s`;
-                if (userAnswers[index] === idx) optEl.classList.add('selected');
-                optEl.innerHTML = `<div class="opt-letter">${['A','B','C'][idx]}</div><div>${opt}</div>`;
-                optEl.onclick = () => selectOption(idx);
-                optsContainer.appendChild(optEl);
+                const div = document.createElement('div');
+                div.className = 'option fade-in';
+                if (userAnswers[index] === idx) div.classList.add('selected');
+                div.innerHTML = `<div class="opt-letter">${['A','B','C'][idx]}</div><div>${opt}</div>`;
+                div.onclick = () => selectOption(idx);
+                optionsCont.appendChild(div);
             });
 
-            document.getElementById('btnPrev').style.visibility = index === 0 ? 'hidden' : 'visible';
-            document.getElementById('btnNext').style.display = index === (questions.length - 1) ? 'none' : 'block';
-            document.getElementById('btnFinish').style.display = index === (questions.length - 1) ? 'block' : 'none';
-
             updateGrid();
-            if (audioActive) setTimeout(speakSequentially, 500);
+            if (audioActive) speakSequentially();
         }
 
         function updateGrid() {
@@ -914,111 +911,101 @@
         }
 
         function selectOption(idx) {
+            if (userAnswers[currentIndex] !== null && examMode !== 'tutor') return;
             userAnswers[currentIndex] = idx;
-            const opts = document.querySelectorAll('.option');
-            opts.forEach(o => o.classList.remove('selected'));
-            opts[idx].classList.add('selected');
             
-            updateGrid();
-            
-            if (currentIndex < (questions.length - 1)) {
-                setTimeout(() => navigate(1), 600);
+            if (examMode === 'tutor') {
+                const q = questions[currentIndex];
+                const isCorrect = (idx === q.ans);
+                const opts = document.querySelectorAll('.option');
+                opts.forEach(o => o.classList.remove('selected', 'success-border', 'error-border'));
+                
+                if (isCorrect) {
+                    opts[idx].classList.add('selected', 'success-border');
+                    if (window.confetti) confetti({ particleCount: 30, spread: 60, origin: { y: 0.8 } });
+                } else {
+                    opts[idx].classList.add('selected', 'error-border');
+                    opts[q.ans].classList.add('success-border');
+                    if (!stats.failedQuestions.includes(q.q)) stats.failedQuestions.push(q.q);
+                }
+
+                speakFeedback(isCorrect, q.explanation, () => {
+                    setTimeout(() => {
+                        if (currentIndex < questions.length - 1) navigate(1);
+                        else showConfirmModal();
+                    }, 1500);
+                });
+            } else {
+                const opts = document.querySelectorAll('.option');
+                opts.forEach((o, i) => {
+                    o.classList.remove('selected');
+                    if(i === idx) o.classList.add('selected');
+                });
+                updateGrid();
+                setTimeout(() => { if (currentIndex < questions.length - 1) navigate(1); }, 500);
             }
         }
 
         function navigate(dir) {
-            const nextIdx = currentIndex + dir;
-            if (nextIdx >= 0 && nextIdx < questions.length) loadQuestion(nextIdx);
+            let next = currentIndex + dir;
+            if (next >= 0 && next < questions.length) loadQuestion(next);
         }
 
         function showConfirmModal() {
             const unaswered = userAnswers.filter(a => a === null).length;
             document.getElementById('unansweredText').innerText = unaswered > 0 
-                ? `Aún te quedan ${unaswered} preguntas sin responder. ¿Quieres finalizar el examen?` 
-                : `Has respondido a todas las preguntas. ¿Quieres entregar el examen ahora?`;
+                ? `Te quedan ${unaswered} preguntas sin responder.` 
+                : `Has respondido todo. ¿Quieres entregar?`;
             document.getElementById('confirmModal').classList.add('active');
         }
-
-        function closeConfirmModal() { document.getElementById('confirmModal').classList.remove('active'); }
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').classList.remove('active');
+        }
 
         function submitExam() {
-            stopAudio();
             clearInterval(timerInterval);
             closeConfirmModal();
+            document.getElementById('quizScreen').classList.add('hidden');
+            document.getElementById('resultsScreen').classList.remove('hidden');
             
-            const quiz = document.getElementById('quizScreen');
-            const res = document.getElementById('resultsScreen');
-            quiz.classList.add('hidden');
-            res.classList.remove('hidden');
-            res.classList.add('fade-in');
-            
-            document.getElementById('timerDisplay').style.display = 'none';
-
             let correct = 0;
-            let reviewHTML = '';
-
             questions.forEach((q, i) => {
-                const userAns = userAnswers[i];
-                const isCorrect = userAns === q.ans;
-                if (isCorrect) correct++;
-                else {
-                    if (!stats.failedQuestions.includes(q.q)) stats.failedQuestions.push(q.q);
-                }
-
-                let optsHTML = '';
-                q.opts.forEach((opt, idx) => {
-                    optsHTML += `
-                        <div class="option" style="cursor:default; margin-bottom:8px; background:${idx === q.ans ? 'var(--success-bg)' : userAns === idx ? 'var(--error-bg)' : 'transparent'}">
-                            <span class="opt-letter">${['A','B','C'][idx]}</span> ${opt}
-                        </div>`;
-                });
-
-                let tagsHTML = (q.tags || []).map(t => `<span class="badge">${t}</span>`).join('');
-
-                reviewHTML += `
-                    <div class="glass-panel" style="margin-bottom: 20px; padding: 25px;">
-                        ${tagsHTML}
-                        <h4 style="margin-bottom:15px; display:flex; gap:10px;">
-                            <span style="color:var(--accent)">${i+1}.</span> ${q.q}
-                        </h4>
-                        ${optsHTML}
-                    </div>`;
+                if (userAnswers[i] === q.ans) correct++;
+                else if (!stats.failedQuestions.includes(q.q)) stats.failedQuestions.push(q.q);
             });
 
             stats.totalExams++;
             if (correct >= 18) stats.passed++;
             localStorage.setItem('a2_stats', JSON.stringify(stats));
-
-            document.getElementById('reviewContainer').innerHTML = reviewHTML;
-            document.getElementById('scoreInfo').innerText = `Aciertos: ${correct} | Fallos: ${20 - correct}`;
             
-            const title = document.getElementById('resultTitle');
-            const sub = document.getElementById('resultSubtitle');
+            document.getElementById('scoreInfo').innerText = `Aciertos: ${correct} | Fallos: ${questions.length - correct}`;
             const banner = document.getElementById('resultBanner');
-
-            const passLimit = Math.ceil(questions.length * 0.9);
-            const totalErrors = questions.length - correct;
-            const allowedErrors = Math.floor(questions.length * 0.1);
-
-            
-            if (correct >= passLimit) {
-                if (window.confetti) {
-                    confetti({
-                        particleCount: 150,
-                        spread: 70,
-                        origin: { y: 0.6 },
-                        colors: ['#22d3ee', '#818cf8', '#ffffff']
-                    });
-                }
-
-                banner.className = 'result-banner apto fade-in';
-                title.innerText = 'APTO';
-                sub.innerText = '¡Felicidades! Has superado la prueba teórica.';
+            if (correct >= 18) {
+                banner.className = 'result-banner apto';
+                document.getElementById('resultTitle').innerText = "APTO";
+                if (window.confetti) confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
             } else {
-                banner.className = 'result-banner no-apto fade-in';
-                title.innerText = 'NO APTO';
-                sub.innerText = `Has tenido ${totalErrors} fallos. El máximo permitido son ${allowedErrors}.`;
+                banner.className = 'result-banner no-apto';
+                document.getElementById('resultTitle').innerText = "NO APTO";
             }
+        }
+
+        function showCategorySelector() {
+            const categories = [...new Set(allQuestions.flatMap(q => q.tags || []))];
+            const grid = document.getElementById('categoryGrid');
+            grid.innerHTML = '';
+            categories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.className = 'btn-secondary';
+                btn.innerText = cat;
+                btn.onclick = () => { closeCategoryModal(); startExam('category', cat); };
+                grid.appendChild(btn);
+            });
+            document.getElementById('categoryModal').classList.add('active');
+        }
+
+        function closeCategoryModal() {
+            document.getElementById('categoryModal').classList.remove('active');
         }
 
         initApp();

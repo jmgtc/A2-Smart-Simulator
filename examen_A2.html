@@ -402,9 +402,82 @@
             transform: scale(1.02);
             z-index: 5;
         }
+
+        /* Feedback borders */
+        .success-border { border-color: var(--success) !important; background: var(--success-bg) !important; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+        .error-border { border-color: var(--error) !important; background: var(--error-bg) !important; box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
+
+        /* Assistant Styles */
+        #assistantContainer {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            display: flex;
+            align-items: flex-end;
+            gap: 15px;
+            z-index: 2000;
+            pointer-events: none;
+        }
+
+        .assistant-avatar {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--accent), #818cf8);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            border: 2px solid rgba(255,255,255,0.2);
+            position: relative;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .assistant-avatar:hover { transform: scale(1.1); }
+
+        .assistant-bubble {
+            background: white;
+            color: #11151f;
+            padding: 15px 20px;
+            border-radius: 20px 20px 0 20px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            max-width: 250px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+
+        .assistant-bubble.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .assistant-status {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 14px;
+            height: 14px;
+            background: #10b981;
+            border: 2px solid #11151f;
+            border-radius: 50%;
+        }
     </style>
 </head>
 <body>
+    <div id="assistantContainer">
+        <div class="assistant-bubble" id="assistantBubble"></div>
+        <div class="assistant-avatar">
+            🎓
+            <div class="assistant-status"></div>
+        </div>
+    </div>
 
     <header>
         <h2><span>NLM</span> Autoescuela Virtual</h2>
@@ -448,6 +521,12 @@
                     <h3 style="color: #A855F7; margin-bottom: 5px; font-size: 1.1rem;">📚 Temas</h3>
                     <p style="font-size: 0.8rem; opacity: 0.7; margin-bottom: 10px;">Elige un tema específico.</p>
                     <button class="btn-primary" style="padding: 8px; font-size: 0.9rem; background: #9333EA;">Ver Temas</button>
+                </div>
+                <!-- MODO TUTOR -->
+                <div class="glass-panel" style="padding: 15px; grid-column: span 2; border: 1px solid var(--accent); background: rgba(34, 211, 238, 0.05); cursor: pointer;" onclick="startExam('tutor')">
+                    <h3 style="color: var(--accent); margin-bottom: 5px; font-size: 1.1rem;">🤖 Asistente IA / Tutor</h3>
+                    <p style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 10px;">Tu tutor personal. Te guiará, te corregirá al momento y te explicará tus fallos por voz.</p>
+                    <button class="btn-primary" style="padding: 10px; font-size: 1rem; background: var(--accent); color: #000;">Iniciar Tutoría</button>
                 </div>
             </div>
         </div>
@@ -533,11 +612,22 @@
         let voiceActive = false;
         let isListening = false;
         let currentUtterance = null;
+        let assistantTimeout = null;
 
-
-        let recognition = null;
-        let voiceActive = false;
-        let isListening = false;
+        function showAssistantMessage(text, duration = 4000) {
+            const bubble = document.getElementById('assistantBubble');
+            if (!bubble) return;
+            bubble.innerText = text;
+            bubble.classList.add('active');
+            
+            if (assistantTimeout) clearTimeout(assistantTimeout);
+            
+            if (duration > 0) {
+                assistantTimeout = setTimeout(() => {
+                    bubble.classList.remove('active');
+                }, duration);
+            }
+        }
 
 
         const stats = JSON.parse(localStorage.getItem('a2_stats')) || { totalExams: 0, passed: 0, failedQuestions: [] };
@@ -615,11 +705,15 @@
                     isListening = true; 
                     const quiz = document.getElementById('quizScreen');
                     if (quiz) quiz.classList.add('listening');
+                    const avatar = document.querySelector('.assistant-avatar');
+                    if (avatar) avatar.classList.add('listening-pulse');
                 };
                 recognition.onend = () => { 
                     isListening = false; 
                     const quiz = document.getElementById('quizScreen');
                     if (quiz) quiz.classList.remove('listening');
+                    const avatar = document.querySelector('.assistant-avatar');
+                    if (avatar) avatar.classList.remove('listening-pulse');
                 };
                 recognition.onresult = (event) => {
                     const command = event.results[0][0].transcript.toLowerCase();
@@ -660,7 +754,22 @@
             if (cmd.includes('anterior')) { navigate(-1); return; }
 
             // Fallback
-            speakText('No te he entendido. ¿Qué alternativa eliges?', () => startListening());
+            showAssistantMessage('No te he entendido bien. ¿Puedes repetir? Di la A, la B o la C.', 3000);
+            speakText('No te he entendido bien. ¿Puedes repetir la alternativa? Di la A, la B o la C.', () => startListening());
+        }
+
+        function speakFeedback(isCorrect, explanation, callback) {
+            let msg = isCorrect ? '¡Correcto! Muy bien hecho.' : 'No es correcto.';
+            if (!isCorrect && explanation) {
+                msg += ` La respuesta correcta era la ${['A', 'B', 'C'][questions[currentIndex].ans]}. ${explanation}`;
+            } else if (!isCorrect) {
+                msg += ` La respuesta correcta era la ${['A', 'B', 'C'][questions[currentIndex].ans]}.`;
+            }
+            
+            msg += (currentIndex < questions.length - 1) ? ' Vamos con la siguiente.' : ' Has terminado el examen.';
+            
+            showAssistantMessage(msg, 6000);
+            speakText(msg, callback);
         }
 
         function readSingleOption(idx) {
@@ -669,6 +778,7 @@
             opts.forEach(o => o.classList.remove('reading-active'));
             opts[idx].classList.add('reading-active');
             const letter = ['A','B','C'][idx];
+            showAssistantMessage(`Repitiendo Opción ${letter}`, 3000);
             speakText(`Repitiendo Opción ${letter}: ${questions[currentIndex].opts[idx]}. ¿Qué alternativa eliges?`, () => startListening());
         }
 
@@ -786,6 +896,7 @@
                             opts.forEach(o => o.classList.remove('reading-active'));
                             if (voiceActive) {
                                 setTimeout(() => {
+                                    showAssistantMessage('¿Qué alternativa eliges?', 3000);
                                     speakText('¿Qué alternativa eliges?', () => startListening());
                                 }, 500);
                             }
@@ -803,13 +914,26 @@
             closeCategoryModal();
 
             // Configurar modo
-            if (mode === 'audio') {
+            if (mode === 'audio' || mode === 'tutor') {
                 audioActive = true;
                 const btn = document.getElementById('audioToggle');
                 btn.classList.add('active');
                 btn.innerHTML = `<span>🔊</span> Audio On`;
                 document.getElementById('btnReplay').style.display = 'block';
                 document.getElementById('timerDisplay').style.opacity = '0.3'; 
+                
+                if (mode === 'tutor') {
+                    voiceActive = true;
+                    initRecognition();
+                    setTimeout(() => {
+                        showAssistantMessage("¡Hola! Soy tu Tutor IA. Seleccionaré las preguntas y te guiaré por voz. Empezamos.", 4000);
+                        speakText("¡Hola! Soy tu Tutor IA. Seleccionaré las preguntas y te guiaré por voz. Empezamos.", () => {
+                            // loadQuestion happens right after startExam synchronously, so speakSequentially will already be called.
+                            // However, we want to make sure the sequence sounds right. The loadQuestion triggers speakSequentially after 500ms anyway.
+                            // So we shouldn't speak a long intro here, or we should delay loadQuestion.
+                        });
+                    }, 100);
+                }
             } else {
                 audioActive = false;
                 document.getElementById('timerDisplay').style.opacity = '1';
@@ -920,11 +1044,39 @@
         }
 
         function selectOption(idx) {
+            if (userAnswers[currentIndex] !== null && examMode !== 'tutor') return; 
+            
             userAnswers[currentIndex] = idx;
             const opts = document.querySelectorAll('.option');
+            
+            const q = questions[currentIndex];
+            const isCorrect = (idx === q.ans);
+
+            if (examMode === 'tutor') {
+                stopAudio();
+                opts.forEach(o => o.classList.remove('selected', 'success-border', 'error-border'));
+                
+                if (isCorrect) {
+                    opts[idx].classList.add('selected', 'success-border');
+                    if (window.confetti) {
+                        confetti({ particleCount: 40, spread: 50, origin: { y: 0.8 }, colors: ['#10B981', '#ffffff'] });
+                    }
+                } else {
+                    opts[idx].classList.add('selected', 'error-border');
+                    opts[q.ans].classList.add('success-border');
+                }
+
+                speakFeedback(isCorrect, q.explanation, () => {
+                    setTimeout(() => {
+                        if (currentIndex < (questions.length - 1)) navigate(1);
+                        else showConfirmModal();
+                    }, 1000);
+                });
+                return;
+            }
+
             opts.forEach(o => o.classList.remove('selected'));
             opts[idx].classList.add('selected');
-            
             updateGrid();
             
             if (currentIndex < (questions.length - 1)) {

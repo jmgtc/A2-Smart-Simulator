@@ -714,6 +714,15 @@
                     if (quiz) quiz.classList.remove('listening');
                     const avatar = document.querySelector('.assistant-avatar');
                     if (avatar) avatar.classList.remove('listening-pulse');
+
+                    if (examMode === 'tutor' && voiceActive && userAnswers[currentIndex] === null) {
+                        setTimeout(() => {
+                            if (!synth.speaking && userAnswers[currentIndex] === null && !isListening) {
+                                showAssistantMessage('¿Sigues ahí? Dime la A, la B o la C.', 3000);
+                                speakText('No he escuchado nada. ¿Sigues ahí? Dime la alternativa.', () => startListening());
+                            }
+                        }, 1000);
+                    }
                 };
                 recognition.onresult = (event) => {
                     const command = event.results[0][0].transcript.toLowerCase();
@@ -726,7 +735,7 @@
         }
 
         function startListening() {
-            if (voiceActive && recognition && !isListening) {
+            if (voiceActive && recognition && !isListening && !synth.speaking) {
                 try { recognition.start(); } catch(e) {}
             }
         }
@@ -744,14 +753,15 @@
                 if (cmd.includes('opción c') || cmd.includes('la c')) { readSingleOption(2); return; }
             }
 
-            // Seleccionar
-            if (cmd.includes('la a') || cmd === 'a' || cmd === 'alfa') { selectOption(0); return; }
-            if (cmd.includes('la b') || cmd === 'b' || cmd === 'bravo') { selectOption(1); return; }
-            if (cmd.includes('la c') || cmd === 'c' || cmd === 'charlie' || cmd.includes('cocos')) { selectOption(2); return; }
+            // Seleccionar (validación estricta para evitar falsos positivos de ruido)
+            if (cmd === 'a' || cmd.includes('la a') || cmd.includes('alternativa a') || cmd === 'alfa') { selectOption(0); return; }
+            if (cmd === 'b' || cmd.includes('la b') || cmd.includes('alternativa b') || cmd === 'bravo') { selectOption(1); return; }
+            if (cmd === 'c' || cmd.includes('la c') || cmd.includes('alternativa c') || cmd === 'charlie') { selectOption(2); return; }
 
             // Navegar
-            if (cmd.includes('siguiente')) { navigate(1); return; }
-            if (cmd.includes('anterior')) { navigate(-1); return; }
+            if (cmd.includes('siguiente') || cmd.includes('pasar')) { navigate(1); return; }
+            if (cmd.includes('anterior') || cmd.includes('volver')) { navigate(-1); return; }
+            if (cmd.includes('terminar') || cmd.includes('finalizar') || cmd.includes('entregar')) { showConfirmModal(); return; }
 
             // Fallback
             showAssistantMessage('No te he entendido bien. ¿Puedes repetir? Di la A, la B o la C.', 3000);

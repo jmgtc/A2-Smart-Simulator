@@ -770,15 +770,16 @@
 
         function speakFeedback(isCorrect, explanation, callback) {
             let msg = isCorrect ? '¡Correcto! Muy bien hecho.' : 'No es correcto.';
-            if (!isCorrect && explanation) {
-                msg += ` La respuesta correcta era la ${['A', 'B', 'C'][questions[currentIndex].ans]}. ${explanation}`;
-            } else if (!isCorrect) {
+            if (!isCorrect) {
                 msg += ` La respuesta correcta era la ${['A', 'B', 'C'][questions[currentIndex].ans]}.`;
+            }
+            if (explanation) {
+                msg += ` ${explanation}`;
             }
             
             msg += (currentIndex < questions.length - 1) ? ' Vamos con la siguiente.' : ' Has terminado el examen.';
             
-            showAssistantMessage(msg, 6000);
+            showAssistantMessage(msg, 8000);
             speakText(msg, callback);
         }
 

@@ -788,10 +788,9 @@
 
         const synth = window.speechSynthesis;
 
-        // ── LIVE SESSION STATE (reemplaza VAD) ──
-        let liveSession = null;       // instancia GeminiLiveSession
-        let liveConnecting = false;   // evita doble conexión
-        const hasMediaRecorder = !!(window.MediaRecorder && navigator.mediaDevices?.getUserMedia);
+        // ── VOICE ENGINE STATE ──
+        // speechEngine se declara junto a ShiviSpeechEngine más abajo
+        const hasSpeechRecognition = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
         // ── ELEVENLABS CONFIG (opcional — mejora la voz) ──
         const ELEVENLABS_API_KEY = 'sk_0179622c39f0cdb67d0bc31919fa8c359b7b962817659f10';
@@ -1070,6 +1069,7 @@
 
 
                 // ─ Fallback: Web Speech API ─
+                speechEngine?.pauseWhileSpeaking(Math.max(text.length * 60, 1500));
                 AudioQueue.add(text,
                     () => { if (examMode === 'tutor') setShiviState('speaking'); },
                     () => { if (examMode === 'tutor') setShiviState('idle'); if (onEnd) onEnd(); }
@@ -1452,10 +1452,6 @@ Reglas:
             speakChain(items, () => {
                 if (examMode === 'tutor') setShiviState('listening');
                 startAnswerTimeout();
-                // Actualizar contexto de Gemini Live con la pregunta actual
-                if (liveSession?.connected && questions[currentIndex]) {
-                    liveSession.updateContext(questions[currentIndex]);
-                }
             });
         }
 
@@ -1498,9 +1494,9 @@ Reglas:
                 setShiviState('thinking');
                 showAssistantMessage('Preparando el modo tutor...');
 
-                if (!hasMediaRecorder) {
+                if (!hasSpeechRecognition) {
                     voiceActive = false;
-                    showToast('Tu navegador no soporta captura de audio.', 'error');
+                    showToast('Tu navegador no soporta reconocimiento de voz. Usa Safari iOS 14.5+ o Chrome.', 'error');
                 }
 
                 unlockAudio().then(() => {
@@ -1609,10 +1605,23 @@ Reglas:
             let next = currentIndex + dir;
             if (next >= 0 && next < questions.length) {
                 loadQuestion(next);
-                // Actualizar contexto de Gemini Live con la nueva pregunta
-                if (liveSession?.connected && questions[next]) {
-                    liveSession.updateContext(questions[next]);
-                }
+            }
+        }
+
+        // Botón de Manos Libres (toggle desde UI o teclado)
+        function toggleVoice() {
+            voiceActive = !voiceActive;
+            const panel = document.getElementById('voiceTogglePanel');
+            const text  = document.getElementById('voiceStatusText');
+            if (voiceActive) {
+                if (panel) panel.classList.add('voice-active');
+                if (text)  text.innerText = 'Modo Manos Libres Activo';
+                audioActive = true;
+                startLiveSession();
+            } else {
+                if (panel) panel.classList.remove('voice-active');
+                if (text)  text.innerText = 'Activar Modo Manos Libres';
+                stopLiveSession();
             }
         }
 

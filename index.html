@@ -795,7 +795,7 @@
 
         // ── ELEVENLABS CONFIG (opcional — mejora la voz) ──
         const ELEVENLABS_API_KEY = 'sk_0179622c39f0cdb67d0bc31919fa8c359b7b962817659f10';
-        const ELEVEN_VOICE_ID = 'ay4iqk10DLwc8KGSrf2t'; // Voz elegida (español)
+        const ELEVEN_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL'; // Bella — voz femenina gratuita (español)
 
         function getSupportedMimeType() {
             const types = ['audio/webm;codecs=opus','audio/mp4','audio/ogg;codecs=opus','audio/webm'];
@@ -1457,38 +1457,47 @@ Si el audio es ruido o silencio usa "ignore" con speech vacío. El alumno puede 
         }
 
 
+        // Encadena textos uno tras otro usando ShiviTTS (funciona con ElevenLabs y Web Speech)
+        function speakChain(texts, onAllDone) {
+            const queue = [...texts];
+            function next() {
+                if (queue.length === 0) { if (onAllDone) onAllDone(); return; }
+                const item = queue.shift();
+                // Highlight visual de la opción si aplica
+                if (item.optIdx !== undefined) {
+                    const opts = document.querySelectorAll('.option');
+                    opts.forEach(o => o.classList.remove('reading-active'));
+                    if (opts[item.optIdx]) opts[item.optIdx].classList.add('reading-active');
+                }
+                ShiviTTS.speak(item.text, () => {
+                    if (item.optIdx !== undefined) {
+                        const opts = document.querySelectorAll('.option');
+                        opts.forEach(o => o.classList.remove('reading-active'));
+                    }
+                    next();
+                });
+            }
+            next();
+        }
+
         function speakSequentially() {
             const q = questions[currentIndex];
-            AudioQueue.clear(); // Limpiar cola por si acaso
-            
-            // Encolar la pregunta principal
-            speakText(q.q);
-            
-            // Encolar cada opción
+            ShiviTTS.stop();
+            AudioQueue.clear();
+
+            const items = [{ text: q.q }];
             q.opts.forEach((opt, idx) => {
-                const letter = ['A', 'B', 'C'][idx];
-                const isLast = (idx === q.opts.length - 1);
-                
-                AudioQueue.add(`Opción ${letter}: ${opt}`,
-                    () => { // onstart
-                        const opts = document.querySelectorAll('.option');
-                        opts.forEach(o => o.classList.remove('reading-active'));
-                        if (opts[idx]) opts[idx].classList.add('reading-active');
-                        if (examMode === 'tutor') setShiviState('speaking');
-                    },
-                    () => { // onend
-                        const opts = document.querySelectorAll('.option');
-                        opts.forEach(o => o.classList.remove('reading-active'));
-                        if (examMode === 'tutor') setShiviState('idle');
-                        
-                        if (isLast && voiceActive) {
-                            scheduleVADRestart(500);
-                        }
-                        if (isLast && examMode === 'tutor') {
-                            startAnswerTimeout();
-                        }
-                    }
-                );
+                items.push({ text: `Opción ${ ['A','B','C'][idx] }: ${opt}`, optIdx: idx });
+            });
+
+            if (examMode === 'tutor') setShiviState('speaking');
+            speakChain(items, () => {
+                if (examMode === 'tutor') setShiviState('listening');
+                startAnswerTimeout();
+                // Actualizar contexto de Gemini Live con la pregunta actual
+                if (liveSession?.connected && questions[currentIndex]) {
+                    liveSession.updateContext(questions[currentIndex]);
+                }
             });
         }
 
@@ -1519,7 +1528,6 @@ Si el audio es ruido o silencio usa "ignore" con speech vacío. El alumno puede 
             if (mode === 'tutor') {
                 audioActive = true;
                 voiceActive = true;
-                // Reset session tracking
                 currentStreak = 0; sessionTopics = {};
                 const hist = document.getElementById('shiviHistory');
                 if (hist) hist.innerHTML = '';
@@ -1532,10 +1540,9 @@ Si el audio es ruido o silencio usa "ignore" con speech vacío. El alumno puede 
                 setShiviState('thinking');
                 showAssistantMessage('Preparando el modo tutor...');
 
-                // VAD con MediaRecorder funciona en iOS Safari 15.1+ — sin restricciones
                 if (!hasMediaRecorder) {
                     voiceActive = false;
-                    showToast('Tu navegador no soporta captura de audio. Usa la versión actualizada de Safari.', 'error');
+                    showToast('Tu navegador no soporta captura de audio.', 'error');
                 }
 
                 unlockAudio().then(() => {
@@ -1543,9 +1550,10 @@ Si el audio es ruido o silencio usa "ignore" con speech vacío. El alumno puede 
                     const intro = 'Hola, soy Shivi, tu tutora virtual. Te guiaré en este examen y explicaré cada respuesta. Puedes hablar para responder A, B o C; pedir "repetir", "siguiente" o "explica". ¡Empecemos!';
                     showAssistantMessage(intro);
                     addToHistory('shivi', intro);
-                    speakText(intro, () => {
+                    ShiviTTS.speak(intro, () => {
                         speakSequentially();
-                        if (voiceActive) scheduleVADRestart(500);
+                        // Iniciar sesión de voz Gemini Live
+                        if (voiceActive) startLiveSession();
                     });
                 });
             } else {

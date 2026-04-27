@@ -932,16 +932,22 @@
             }
         }
 
-        // Espera a que el synth esté listo y desbloquea el audio con una utterance silenciosa
+        // Desbloquea Web Speech API Y crea el AudioContext de ElevenLabs durante el gesto del usuario
         function unlockAudio() {
             return new Promise((resolve) => {
+                // Pre-crear AudioContext de ElevenLabs durante el gesto (iOS lo exige)
+                if (!ShiviTTS._audioCtx || ShiviTTS._audioCtx.state === 'closed') {
+                    ShiviTTS._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                ShiviTTS._audioCtx.resume().catch(() => {});
+
+                // Desbloquear Web Speech
                 const unlock = new SpeechSynthesisUtterance('.');
-                unlock.volume = 0.01;  // casi cero pero no cero (Safari ignora vol=0)
-                unlock.rate = 10;      // ultra rápido, inaudible
+                unlock.volume = 0.01;
+                unlock.rate = 10;
                 unlock.onend = resolve;
-                unlock.onerror = resolve; // resolver igualmente si falla
+                unlock.onerror = resolve;
                 synth.speak(unlock);
-                // Failsafe: resolver en 800ms en cualquier caso
                 setTimeout(resolve, 800);
             });
         }
@@ -1499,6 +1505,15 @@ Reglas:
                     showToast('Tu navegador no soporta reconocimiento de voz. Usa Safari iOS 14.5+ o Chrome.', 'error');
                 }
 
+                // ✔ iOS FIX: iniciar AudioContext y SpeechRecognition AHORA,
+                //   durante el handler del click del usuario (antes de cualquier async)
+                if (!ShiviTTS._audioCtx || ShiviTTS._audioCtx.state === 'closed') {
+                    ShiviTTS._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                ShiviTTS._audioCtx.resume().catch(() => {});
+
+                if (voiceActive) startLiveSession(); // mic durante el gesto del usuario
+
                 unlockAudio().then(() => {
                     AudioQueue.clear();
                     const intro = 'Hola, soy Shivi, tu tutora virtual. Te guiaré en este examen y explicaré cada respuesta. Puedes hablar para responder A, B o C; pedir "repetir", "siguiente" o "explica". ¡Empecemos!';
@@ -1506,8 +1521,6 @@ Reglas:
                     addToHistory('shivi', intro);
                     ShiviTTS.speak(intro, () => {
                         speakSequentially();
-                        // Iniciar sesión de voz Gemini Live
-                        if (voiceActive) startLiveSession();
                     });
                 });
             } else {

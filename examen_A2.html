@@ -665,30 +665,8 @@
         
 
         
-        }
 
-        
-
-        : ${questions[currentIndex].opts[idx]}. ¿Qué alternativa eliges?`, () => startListening());
-        }
-
-        
-        
         // --- SISTEMA DE IA DE VOZ ---
-        function toggleVoice() {
-            voiceActive = !voiceActive;
-            const btn = document.getElementById('voiceTogglePanel');
-            const txt = document.getElementById('voiceStatusText');
-            if (voiceActive) {
-                btn.classList.add('voice-active');
-                txt.innerText = 'Escuchando activo. Responderás con voz.';
-                initRecognition();
-            } else {
-                btn.classList.remove('voice-active');
-                txt.innerText = 'Inactivo. Haz clic para activar escuchado.';
-                if (recognition) recognition.stop();
-            }
-        }
 
         function initRecognition() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;

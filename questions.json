@@ -125,6 +125,8 @@
       "Ninguno, ya que ese tipo de motocicletas no necesitan batería",
       "Renovar el electrolito frecuentemente"
     ],
+    "ans": 1,
+    "tags": ["Mantenimiento y Mecánica"],
     "explanation": "Las motocicletas con sistema de encendido por magneto generan su propia electricidad para la chispa de la bujía, por lo que no dependen de una batería para funcionar."
   },
   {
@@ -134,6 +136,8 @@
       "No, en ningún caso.",
       "Si, cuando por avería circula a una velocidad anormalmente reducida."
     ],
+    "ans": 2,
+    "tags": ["Normativa y Documentación"],
     "explanation": "Si una motocicleta no puede alcanzar la velocidad mínima obligatoria por avería, debe circular por el arcén si existe y es transitable."
   },
   {
@@ -157,6 +161,8 @@
       "adelantar.",
       "superar los 80 km/h."
     ],
+    "ans": 0,
+    "tags": ["Normativa y Documentación"],
     "explanation": "En un carril VAO, las motocicletas pueden circular pero tienen prohibido llevar cualquier tipo de remolque o semirremolque."
   },
   {
@@ -166,6 +172,8 @@
       "Gasolina sin plomo",
       "Gasolina con sustituto del plomo"
     ],
+    "ans": 1,
+    "tags": ["Mantenimiento y Mecánica"],
     "explanation": "Los vehículos con catalizador deben usar obligatoriamente gasolina sin plomo, ya que el plomo destruiría el catalizador de forma inmediata."
   },
   {
@@ -188,6 +196,8 @@
       "Fuera de la calzada, en la parte transitable del arcén derecho.",
       "Fuera de la calzada, dejando libre la parte transitable del arcén derecho o izquierdo."
     ],
+    "ans": 0,
+    "tags": ["Normativa y Documentación"],
     "explanation": "En vías interurbanas, el estacionamiento debe realizarse siempre fuera de la calzada y de la parte transitable del arcén derecho."
   },
   {
@@ -197,6 +207,8 @@
       "En vías urbanas",
       "En autopistas y autovías"
     ],
+    "ans": 0,
+    "tags": ["General"],
     "explanation": "Las vías interurbanas (carreteras convencionales) son el escenario donde se registran más accidentes mortales, a menudo por colisiones frontales o salidas de vía."
   },
   {

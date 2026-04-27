@@ -1021,20 +1021,28 @@
                 // ─ ElevenLabs (si hay API key) ─
                 if (ELEVENLABS_API_KEY) {
                     try {
+                        console.log('[TTS] Llamando ElevenLabs — voz:', ELEVEN_VOICE_ID);
                         this._abortCtrl = new AbortController();
                         const res = await fetch(
-                            `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}/stream`,
+                            `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}`,
                             {
                                 method: 'POST', signal: this._abortCtrl.signal,
-                                headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
+                                headers: {
+                                    'xi-api-key': ELEVENLABS_API_KEY,
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'audio/mpeg'
+                                },
                                 body: JSON.stringify({
                                     text,
-                                    model_id: 'eleven_turbo_v2_5',
-                                    voice_settings: { stability: 0.55, similarity_boost: 0.80, style: 0.3, use_speaker_boost: true }
+                                    model_id: 'eleven_multilingual_v2',
+                                    voice_settings: { stability: 0.50, similarity_boost: 0.85, style: 0.2, use_speaker_boost: true }
                                 })
                             }
                         );
-                        if (!res.ok) throw new Error('ElevenLabs HTTP ' + res.status);
+                        if (!res.ok) {
+                            const errText = await res.text();
+                            throw new Error(`ElevenLabs HTTP ${res.status}: ${errText}`);
+                        }
                         const arrayBuf = await res.arrayBuffer();
                         if (!this._audioCtx || this._audioCtx.state === 'closed') {
                             this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1050,12 +1058,14 @@
                             if (onEnd) onEnd();
                         };
                         this._source.start(0);
+                        console.log('[TTS] ElevenLabs OK ✅');
                         return;
                     } catch(err) {
                         if (err.name === 'AbortError') return;
-                        console.warn('[TTS] ElevenLabs falló, usando Web Speech:', err.message);
+                        console.error('[TTS] ElevenLabs ERROR — usando Web Speech como fallback:', err.message);
                     }
                 }
+
 
                 // ─ Fallback: Web Speech API ─
                 AudioQueue.add(text,

@@ -1053,6 +1053,8 @@
                         this._source.buffer = decoded;
                         this._source.connect(this._audioCtx.destination);
                         if (examMode === 'tutor') setShiviState('speaking');
+                        // Pausar mic mientras habla ElevenLabs (evitar eco)
+                        speechEngine?.pauseWhileSpeaking(decoded.duration * 1000 + 700);
                         this._source.onended = () => {
                             if (examMode === 'tutor') setShiviState('idle');
                             if (onEnd) onEnd();
@@ -1194,207 +1196,161 @@
         }
 
         // ================================================================
-        // GeminiLiveSession — WebSocket bidireccional en tiempo real
-        // Input:  PCM 16-bit 16kHz (ScriptProcessorNode)
-        // Output: JSON {action, speech} en modo TEXT
+        // ShiviSpeechEngine — Reconocimiento de voz nativo (Web Speech API)
+        // Input:  SpeechRecognition (Safari iOS 14.5+, Chrome, Edge)
+        // Output: Gemini REST interpreta el texto → acción
+        // Ventajas vs WebSocket: sin latencia de conexión, sin problemas de
+        //   ScriptProcessorNode en iOS, funciona con redes móviles.
         // ================================================================
-        class GeminiLiveSession {
+        class ShiviSpeechEngine {
             constructor() {
-                this.ws = null;
-                this.audioCtx = null;
-                this.stream = null;
-                this.processor = null;
-                this.connected = false;
-                this._textBuffer = '';
-                this._setupDone = false;
-            }
+                const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SR) { this.supported = false; return; }
+                this.supported = true;
+                this.active = false;
+                this._listening = false;
+                this._paused = false;
+                this._restartTimer = null;
 
-            _buildSystemPrompt() {
-                return `Eres Shivi, tutora DGT para el examen de moto A2 en España. Escuchas al alumno y respondes SIEMPRE con JSON puro (sin markdown):
-{"action":"selectA|selectB|selectC|next|repeat|explain|speak|ignore","speech":"frase corta en español"}
-Reglas: selectA/B/C si elige opción; next=siguiente; repeat=repetir pregunta; explain=por qué es correcta; speak=pregunta libre sobre DGT; ignore=ruido o silencio.
-Si el audio es ruido o silencio usa "ignore" con speech vacío. El alumno puede interrumpirte en cualquier momento.`;
-            }
+                this.rec = new SR();
+                this.rec.lang = 'es-ES';
+                this.rec.continuous = true;
+                this.rec.interimResults = false;
+                this.rec.maxAlternatives = 1;
 
-            async connect() {
-                if (this.connected || this._setupDone) return;
-                const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
-                return new Promise((resolve, reject) => {
-                    this.ws = new WebSocket(url);
-                    const timeout = setTimeout(() => reject(new Error('WS timeout')), 8000);
-
-                    this.ws.onopen = () => {
-                        this.ws.send(JSON.stringify({
-                            setup: {
-                                model: 'models/gemini-2.0-flash-live-001',
-                                generationConfig: { responseModalities: ['TEXT'] },
-                                systemInstruction: { parts: [{ text: this._buildSystemPrompt() }] }
-                            }
-                        }));
-                    };
-
-                    this.ws.onmessage = (event) => {
-                        try {
-                            const msg = JSON.parse(event.data);
-                            if (msg.setupComplete) {
-                                clearTimeout(timeout);
-                                this.connected = true;
-                                this._setupDone = true;
-                                console.log('[Live] Conectado a Gemini Live API');
-                                resolve();
-                                return;
-                            }
-                            const parts = msg.serverContent?.modelTurn?.parts || [];
-                            for (const p of parts) {
-                                if (p.text) this._textBuffer += p.text;
-                            }
-                            if (msg.serverContent?.turnComplete && this._textBuffer) {
-                                this._handleTextResponse(this._textBuffer.trim());
-                                this._textBuffer = '';
-                            }
-                        } catch(e) { console.warn('[Live] Parse error:', e); }
-                    };
-
-                    this.ws.onerror = (e) => { clearTimeout(timeout); reject(e); };
-                    this.ws.onclose = () => {
-                        this.connected = false;
-                        console.log('[Live] WebSocket cerrado.');
-                        if (voiceActive) setTimeout(() => this._reconnect(), 2000);
-                    };
-                });
-            }
-
-            async _reconnect() {
-                if (!voiceActive) return;
-                console.log('[Live] Reconectando...');
-                this.connected = false;
-                this._setupDone = false;
-                try { this.ws?.close(); } catch(e) {}
-                await this.connect();
-                showToast('Shivi reconectada ✅', 'success');
-            }
-
-            updateContext(q) {
-                if (!this.connected || !q) return;
-                const ctx = `[CONTEXTO] Pregunta actual: "${q.q}" | Opciones: A)${q.opts[0]} B)${q.opts[1]} C)${q.opts[2]} | Correcta: ${['A','B','C'][q.ans]})${q.opts[q.ans]}`;
-                this.ws.send(JSON.stringify({
-                    clientContent: {
-                        turns: [{ role: 'user', parts: [{ text: ctx }] }],
-                        turnComplete: true
-                    }
-                }));
-            }
-
-            async startMic() {
-                this.stream = await navigator.mediaDevices.getUserMedia({
-                    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
-                });
-                // Forzar 16kHz para Gemini Live
-                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
-
-                const source = this.audioCtx.createMediaStreamSource(this.stream);
-                // ScriptProcessorNode: compatible iOS Safari
-                this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
-                this.processor.onaudioprocess = (e) => {
-                    if (!this.connected || this.ws?.readyState !== WebSocket.OPEN) return;
-                    // No enviar mientras Shivi habla (evita eco)
-                    if (synth.speaking) return;
-                    const f32 = e.inputBuffer.getChannelData(0);
-                    const pcm16 = new Int16Array(f32.length);
-                    for (let i = 0; i < f32.length; i++) {
-                        pcm16[i] = Math.max(-32768, Math.min(32767, f32[i] * 32767));
-                    }
-                    const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
-                    this.ws.send(JSON.stringify({
-                        realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: b64 }] }
-                    }));
+                this.rec.onresult = (e) => {
+                    const last = e.results[e.results.length - 1];
+                    if (!last.isFinal) return;
+                    const text = last[0].transcript.trim();
+                    if (text) { console.log('[SR] 🎤', text); this._onText(text); }
                 };
-                source.connect(this.processor);
-                this.processor.connect(this.audioCtx.destination);
-                console.log('[Live] Mic activo — enviando PCM 16kHz');
+
+                this.rec.onend = () => {
+                    this._listening = false;
+                    if (this.active && !this._paused) this._scheduleRestart(300);
+                };
+
+                this.rec.onerror = (e) => {
+                    this._listening = false;
+                    if (e.error === 'aborted' || e.error === 'no-speech') {
+                        if (this.active && !this._paused) this._scheduleRestart(400);
+                        return;
+                    }
+                    console.warn('[SR] Error:', e.error);
+                    if (this.active && !this._paused) this._scheduleRestart(1000);
+                };
+            }
+
+            _scheduleRestart(ms) {
+                clearTimeout(this._restartTimer);
+                this._restartTimer = setTimeout(() => { if (this.active && !this._paused) this.start(); }, ms);
+            }
+
+            start() {
+                if (!this.supported || !this.active || this._listening || this._paused) return;
+                try { this.rec.start(); this._listening = true; } catch(e) {}
+            }
+
+            // Pausa mientras Shivi habla (evita eco). Se reactiva tras `resumeAfterMs`.
+            pauseWhileSpeaking(resumeAfterMs = 600) {
+                this._paused = true;
+                clearTimeout(this._restartTimer);
+                if (this._listening) { try { this.rec.stop(); } catch(e) {} }
+                this._listening = false;
+                clearTimeout(this._resumeTimer);
+                this._resumeTimer = setTimeout(() => {
+                    this._paused = false;
+                    if (this.active) { if (examMode === 'tutor') setShiviState('listening'); this.start(); }
+                }, resumeAfterMs);
+            }
+
+            stop() {
+                this.active = false;
+                this._paused = false;
+                clearTimeout(this._restartTimer);
+                clearTimeout(this._resumeTimer);
+                try { this.rec.stop(); } catch(e) {}
+                this._listening = false;
+                if (examMode === 'tutor') setShiviState('idle');
+                console.log('[SR] Parado.');
+            }
+
+            _onText(text) {
+                if (!voiceActive || !questions[currentIndex]) return;
+                if (examMode === 'tutor') setShiviState('thinking');
+                processVoiceCommand(text);
+            }
+        }
+
+        // Interpreta el texto reconocido con Gemini REST
+        async function processVoiceCommand(text) {
+            const q = questions[currentIndex];
+            if (!q || GEMINI_API_KEY === 'YOUR_API_KEY_HERE') return;
+
+            const prompt = `Eres Shivi, tutora DGT para el examen de moto A2 en España. El alumno dice: "${text}"
+
+Pregunta actual: "${q.q}"
+Opciones: A) ${q.opts[0]}  B) ${q.opts[1]}  C) ${q.opts[2]}
+Respuesta correcta: ${['A','B','C'][q.ans]}) ${q.opts[q.ans]}
+
+Responde ÚNICAMENTE con este JSON (sin markdown, sin texto extra):
+{"action":"selectA|selectB|selectC|next|repeat|explain|speak|ignore","speech":"frase corta en español"}
+
+Reglas:
+- selectA/B/C: elige esa opción (también "primera/segunda/tercera", "alfa/bravo/charlie", "la A/B/C")
+- next: avanzar ("siguiente", "adelante", "pasa")
+- repeat: repetir pregunta ("repite", "otra vez", "no escuché")
+- explain: explicar respuesta ("por qué", "explica", "razón")
+- speak: pregunta libre sobre DGT (responde en speech brevemente)
+- ignore: no se entiende, silencio, frase irrelevante`;
+
+            try {
+                const res = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+                    { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 80 } }) }
+                );
+                const data = await res.json();
+                const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"action":"ignore","speech":""}';
+                const json = JSON.parse(raw.replace(/```json|```/g, '').trim());
+                console.log('[SR] Action:', json.action, '|', json.speech);
+                handleLiveAction(json.action, json.speech);
+            } catch(err) {
+                console.warn('[SR] Gemini error:', err.message);
                 if (examMode === 'tutor') setShiviState('listening');
             }
-
-            stopMic() {
-                try { this.processor?.disconnect(); } catch(e) {}
-                try { this.stream?.getTracks().forEach(t => t.stop()); } catch(e) {}
-                this.processor = null; this.stream = null;
-            }
-
-            disconnect() {
-                this.connected = false;
-                this.stopMic();
-                try { this.audioCtx?.close(); } catch(e) {}
-                try { this.ws?.close(); } catch(e) {}
-                if (examMode === 'tutor') setShiviState('idle');
-            }
-
-            _handleTextResponse(raw) {
-                try {
-                    const json = JSON.parse(raw.replace(/```json|```/g, '').trim());
-                    console.log('[Live] Action:', json.action, '|', json.speech);
-                    handleLiveAction(json.action, json.speech);
-                } catch(e) {
-                    console.warn('[Live] No es JSON:', raw.substring(0, 80));
-                    // Si Gemini respondó texto libre, hablarlo
-                    if (raw.length > 3) speakText(raw);
-                }
-            }
         }
 
-        function toggleVoice() {
-            if (!navigator.mediaDevices?.getUserMedia) {
-                showToast('Tu dispositivo no soporta captura de audio.', 'error'); return;
-            }
-            voiceActive = !voiceActive;
-            const panel = document.getElementById('voiceTogglePanel');
-            const text  = document.getElementById('voiceStatusText');
-            if (voiceActive) {
-                panel.classList.add('voice-active');
-                text.innerText = 'Modo Manos Libres Activo';
-                audioActive = true;
-                startLiveSession();
-            } else {
-                panel.classList.remove('voice-active');
-                text.innerText = 'Activar Modo Manos Libres';
-                stopLiveSession();
-            }
-        }
+        // Variables del motor de voz (reemplaza liveSession/liveConnecting)
+        let speechEngine = null;
 
-        async function startLiveSession() {
-            if (liveConnecting || liveSession?.connected) return;
-            liveConnecting = true;
-            showToast('Conectando a Shivi Live…', 'info');
-            try {
-                liveSession = new GeminiLiveSession();
-                await liveSession.connect();
-                await liveSession.startMic();
-                // Enviar contexto de la pregunta actual
-                if (questions[currentIndex]) liveSession.updateContext(questions[currentIndex]);
-                showToast('Shivi escuchando — habla ahora 🎤', 'success');
-            } catch(err) {
-                console.error('[Live] startLiveSession error:', err);
-                voiceActive = false;
-                liveSession = null;
-                showToast('No se pudo conectar: ' + err.message, 'error');
-            } finally { liveConnecting = false; }
+        function startLiveSession() {
+            if (speechEngine?.active) return;
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) {
+                showToast('Tu navegador no soporta reconocimiento de voz. Usa Safari iOS 14.5+ o Chrome.', 'error');
+                voiceActive = false; return;
+            }
+            speechEngine = new ShiviSpeechEngine();
+            speechEngine.active = true;
+            speechEngine.start();
+            showToast('Shivi escuchando — habla ahora 🎤', 'success');
+            console.log('[SR] Motor de voz iniciado.');
         }
 
         function stopLiveSession() {
-            liveSession?.disconnect();
-            liveSession = null;
-            liveConnecting = false;
+            speechEngine?.stop();
+            speechEngine = null;
         }
 
-        // Compatibilidad con llamadas legacy (speakSequentially, etc.)
-        function startListening() { /* Live API es continuo — no necesita restart manual */ }
+        // Compatibilidad con llamadas legacy
+        function startListening() { if (voiceActive && speechEngine) speechEngine.start(); }
         function scheduleVADRestart(delay = 400) {
-            if (!voiceActive || !liveSession?.connected) return;
-            // En modo Live el mic ya está activo — solo actualizar contexto
+            if (!voiceActive || !speechEngine?.active) return;
             setTimeout(() => {
-                if (questions[currentIndex]) liveSession?.updateContext(questions[currentIndex]);
-                if (examMode === 'tutor' && !synth.speaking) setShiviState('listening');
+                if (examMode === 'tutor' && !speechEngine._paused) setShiviState('listening');
+                speechEngine?.start();
             }, delay);
         }
 
@@ -1419,7 +1375,9 @@ Si el audio es ruido o silencio usa "ignore" con speech vacío. El alumno puede 
                 case 'speak':
                     if (speech) { showAssistantMessage(speech); addToHistory('shivi', speech); speakText(speech); }
                     break;
-                case 'ignore': default: break;  // silencio o ruido — no hacer nada
+                case 'ignore': default:
+                    if (examMode === 'tutor') setShiviState('listening');
+                    break;
             }
         }
 

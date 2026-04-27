@@ -1150,63 +1150,64 @@
 
         // ================================================================
         // VAD — Voice Activity Detection con MediaRecorder + Gemini Audio
-        // Funciona en: iOS Safari 15.1+, Chrome Android, Firefox, Desktop
+        // Diseño: el RAF loop corre continuamente (vadActive=true).
+        // Cada utterance crea un MediaRecorder NUEVO (no se pueden reusar).
         // ================================================================
         async function startVAD() {
-            if (vadActive || vadProcessing) return;
-            if (!hasMediaRecorder) { console.warn('MediaRecorder no disponible'); return; }
+            if (vadActive) return;          // RAF loop ya corriendo
+            if (vadProcessing) return;      // esperando respuesta Gemini
+            if (!hasMediaRecorder) { console.warn('[VAD] MediaRecorder no disponible'); return; }
 
             try {
                 vadStream = await navigator.mediaDevices.getUserMedia({
                     audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
                 });
 
-                // AudioContext para analizar niveles (VAD)
                 vadAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                // iOS requiere resume tras user gesture
                 if (vadAudioCtx.state === 'suspended') await vadAudioCtx.resume();
 
                 const source = vadAudioCtx.createMediaStreamSource(vadStream);
                 const analyser = vadAudioCtx.createAnalyser();
                 analyser.fftSize = 512;
                 source.connect(analyser);
-
                 const mimeType = getSupportedMimeType();
-                vadMediaRecorder = new MediaRecorder(vadStream, mimeType ? { mimeType } : {});
-                vadChunks = [];
-                vadMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) vadChunks.push(e.data); };
-                vadMediaRecorder.onstop = () => {
-                    const blob = new Blob(vadChunks, { type: mimeType || 'audio/webm' });
-                    vadChunks = [];
-                    if (blob.size > 3000) { // Ignorar clips muy cortos (< ~0.2s)
-                        processAudioWithGemini(blob);
-                    } else {
-                        vadProcessing = false;
-                        scheduleVADRestart();
-                    }
-                };
 
                 vadActive = true;
+                console.log('[VAD] Activo. MimeType:', mimeType || 'default');
                 if (examMode === 'tutor') setShiviState('listening');
 
-                // Loop de análisis de nivel
                 const data = new Uint8Array(analyser.frequencyBinCount);
                 const checkLevel = () => {
                     if (!vadActive) return;
                     analyser.getByteFrequencyData(data);
                     const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length);
 
-                    if (rms > VAD_THRESHOLD && !vadRecording && !vadProcessing) {
-                        // Voz detectada — empezar grabación
+                    // NO grabar mientras Shivi habla — evita eco de su propia voz
+                    const canRecord = rms > VAD_THRESHOLD && !vadRecording && !vadProcessing && !synth.speaking;
+                    if (canRecord) {
                         vadRecording = true;
                         vadChunks = [];
-                        vadMediaRecorder.start(100); // chunks cada 100ms
+                        // ★ Crear MediaRecorder FRESCO cada vez (los usados no se pueden reusar)
+                        const mr = new MediaRecorder(vadStream, mimeType ? { mimeType } : {});
+                        vadMediaRecorder = mr;
+                        mr.ondataavailable = (e) => { if (e.data.size > 0) vadChunks.push(e.data); };
+                        mr.onstop = () => {
+                            const blob = new Blob(vadChunks, { type: mimeType || 'audio/webm' });
+                            vadChunks = [];
+                            console.log('[VAD] Chunk:', blob.size, 'bytes');
+                            if (blob.size > 4000) {
+                                processAudioWithGemini(blob);
+                            } else {
+                                console.log('[VAD] Chunk corto, ignorando.');
+                                vadProcessing = false;
+                            }
+                        };
+                        mr.start(100);
                         clearTimeout(vadSilenceTimer);
-                        // Corte forzado por si el usuario habla demasiado
+                        console.log('[VAD] Grabando...');
                         setTimeout(() => { if (vadRecording) triggerVADStop(); }, VAD_MAX_RECORD_MS);
 
                     } else if (rms <= VAD_THRESHOLD && vadRecording) {
-                        // Silencio detectado — esperar VAD_SILENCE_MS antes de cortar
                         clearTimeout(vadSilenceTimer);
                         vadSilenceTimer = setTimeout(() => triggerVADStop(), VAD_SILENCE_MS);
                     }
@@ -1215,12 +1216,12 @@
                 requestAnimationFrame(checkLevel);
 
             } catch (err) {
-                console.error('VAD startVAD error:', err);
+                console.error('[VAD] startVAD error:', err);
                 vadActive = false;
                 if (err.name === 'NotAllowedError') {
                     showToast('Permiso de micrófono denegado. Actívalo en Ajustes > Safari.', 'error');
                 } else {
-                    showToast('No se pudo activar el micrófono.', 'error');
+                    showToast('No se pudo activar el micrófono: ' + err.message, 'error');
                 }
             }
         }
@@ -1230,24 +1231,39 @@
             vadRecording = false;
             vadProcessing = true;
             clearTimeout(vadSilenceTimer);
-            try { vadMediaRecorder.stop(); } catch(e) {}
+            try { if (vadMediaRecorder && vadMediaRecorder.state !== 'inactive') vadMediaRecorder.stop(); } catch(e) {}
+            console.log('[VAD] Grabación cortada, enviando a Gemini...');
             if (examMode === 'tutor') setShiviState('thinking');
         }
 
         function stopVAD() {
-            vadActive = false;
+            vadActive = false;      // detiene el RAF loop
             vadRecording = false;
+            vadProcessing = false;
             clearTimeout(vadSilenceTimer);
             try { if (vadMediaRecorder && vadMediaRecorder.state !== 'inactive') vadMediaRecorder.stop(); } catch(e) {}
             try { if (vadAudioCtx) vadAudioCtx.close(); } catch(e) {}
             try { if (vadStream) vadStream.getTracks().forEach(t => t.stop()); } catch(e) {}
             vadStream = null; vadAudioCtx = null; vadMediaRecorder = null;
             if (examMode === 'tutor') setShiviState('idle');
+            console.log('[VAD] Parado.');
         }
 
+        // scheduleVADRestart: resetea flags. El RAF loop sigue corriendo.
+        // Si vadActive=false (fue parado), relanza startVAD.
         function scheduleVADRestart(delay = 400) {
             if (!voiceActive) return;
-            setTimeout(() => startVAD(), delay);
+            setTimeout(() => {
+                vadProcessing = false;
+                vadRecording = false;
+                if (!vadActive) {
+                    startVAD(); // loop parado, relanzar todo
+                } else {
+                    // Loop RAF sigue corriendo — solo resetear flags es suficiente
+                    console.log('[VAD] Listo para escuchar.');
+                    if (examMode === 'tutor' && !synth.speaking) setShiviState('listening');
+                }
+            }, delay);
         }
 
         // Blob → base64 string

@@ -277,21 +277,25 @@
         }
 
         .guide-options {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            margin-top: 24px;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 14px !important;
+            margin-top: 24px !important;
+            width: 100% !important;
+            visibility: visible !important;
+            opacity: 1 !important;
         }
 
         .guide-option-btn {
-            width: 100%;
-            padding: 18px;
-            border-radius: 18px;
-            font-size: 18px;
-            text-align: left;
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.16);
-            color: white;
+            display: block !important;
+            width: 100% !important;
+            padding: 18px !important;
+            border-radius: 18px !important;
+            font-size: 18px !important;
+            text-align: left !important;
+            background: rgba(255,255,255,0.08) !important;
+            border: 1px solid rgba(255,255,255,0.16) !important;
+            color: white !important;
             cursor: pointer;
             transition: all 0.2s ease;
         }
@@ -1363,20 +1367,36 @@
             await loadGuideQuestion(guideCurrentIndex);
         }
 
-        function renderGuideOptions(q) {
-            const container = document.getElementById('guideOptionsContainer');
+        function renderGuideOptions(options) {
+            let container = document.getElementById('guideOptionsContainer');
+
             if (!container) {
-                console.error('[GUIDE] guideOptionsContainer no existe');
-                return;
+                console.error('[GUIDE] guideOptionsContainer no existe. Creándolo dinámicamente.');
+                container = document.createElement('div');
+                container.id = 'guideOptionsContainer';
+                container.className = 'guide-options';
+                const questionText = document.getElementById('questionText') || document.getElementById('qText');
+                if (questionText) {
+                    questionText.insertAdjacentElement('afterend', container);
+                }
             }
 
             container.innerHTML = '';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.gap = '14px';
+            container.style.marginTop = '24px';
+            container.style.visibility = 'visible';
+            container.style.opacity = '1';
+
             const labels = ['A', 'B', 'C'];
 
-            q.opts.forEach((option, index) => {
+            options.slice(0, 3).forEach((option, index) => {
                 const btn = document.createElement('button');
+                btn.type = 'button';
                 btn.className = 'guide-option-btn fade-in';
                 btn.style.animationDelay = `${index * 0.1}s`;
+                btn.dataset.index = index;
                 btn.style.pointerEvents = 'none'; // Desactivado inicialmente
                 
                 if (userAnswers[guideCurrentIndex] === index) btn.classList.add('selected');
@@ -1385,6 +1405,7 @@
                 btn.onclick = () => handleGuideAnswer(index);
                 container.appendChild(btn);
             });
+            console.log('[GUIDE] opciones renderizadas:', container.children.length);
         }
 
         async function loadGuideQuestion(index) {
@@ -1403,14 +1424,16 @@
                 return;
             }
 
-            if (!q.opts || q.opts.length < 3) {
-                console.error('[GUIDE] pregunta inválida', q);
+            const options = q.opts || q.options || q.answers;
+            console.log('[GUIDE] pregunta actual', q);
+            console.log('[GUIDE] opciones normalizadas', options);
+
+            if (!options || options.length < 3) {
+                console.error('[GUIDE] pregunta sin opciones válidas', q);
                 goToNextGuideQuestion();
                 return;
             }
             
-            console.log('[GUIDE] question object', q);
-
             const qNum = document.getElementById('qNumber');
             const qText = document.getElementById('qText');
             
@@ -1432,16 +1455,27 @@
                 imgCont.classList.add('hidden');
             }
 
-            renderGuideOptions(q);
+            let container = document.getElementById('guideOptionsContainer');
+            if (!container) {
+                console.error('[GUIDE] guideOptionsContainer no existe. Creándolo dinámicamente.');
+                container = document.createElement('div');
+                container.id = 'guideOptionsContainer';
+                container.className = 'guide-options';
+                qText.insertAdjacentElement('afterend', container);
+            }
+            container.style.display = 'flex';
+            container.style.visibility = 'visible';
+            container.style.opacity = '1';
 
-            await speakGuideQuestionAndOptions();
+            renderGuideOptions(options);
+
+            await speakGuideQuestionAndOptions(q, options);
         }
 
-        async function speakGuideQuestionAndOptions() {
+        async function speakGuideQuestionAndOptions(q, options) {
             if (activeMode !== 'guide' || guideQuestionResolved) return;
             console.log('[GUIDE] speak question start');
             
-            const q = questions[guideCurrentIndex];
             const activeIndex = guideCurrentIndex;
             updateVoiceStatus("Shivi hablando...", true);
             
@@ -1451,14 +1485,14 @@
             const opts = document.querySelectorAll('.guide-option-btn');
             const labels = ['A', 'B', 'C'];
 
-            for (let i = 0; i < q.opts.length; i++) {
+            for (let i = 0; i < 3; i++) {
                 if (guideCurrentIndex !== activeIndex || activeMode !== 'guide') return;
                 
                 opts.forEach(o => o.classList.remove('reading-active'));
                 if (opts[i]) opts[i].classList.add('reading-active');
                 
                 console.log(`[GUIDE] speak option ${labels[i]}`);
-                await speakText(`Opción ${labels[i]}. ${q.opts[i]}`);
+                await speakText(`Opción ${labels[i]}. ${options[i]}`);
             }
 
             opts.forEach(o => o.classList.remove('reading-active'));

@@ -300,6 +300,31 @@
             transition: all 0.2s ease;
         }
 
+        #guideScreen {
+            padding: 24px;
+        }
+
+        .guide-card {
+            max-width: 760px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 28px;
+            padding: 28px;
+        }
+
+        #guideQuestionText {
+            font-size: 28px;
+            font-weight: 800;
+            margin: 28px 0;
+        }
+
+        #guideOptions {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
         .guide-option-btn:active {
             transform: scale(0.98);
         }
@@ -571,7 +596,7 @@
                 <div class="glass-panel" style="padding: 15px; grid-column: span 2; border: 1px solid #10b981; background: rgba(16, 185, 129, 0.05);">
                     <h3 style="color: #10b981; margin-bottom: 5px; font-size: 1.1rem;">🎧 Shivi te guía</h3>
                     <p style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 10px;">Escucha las preguntas y responde tocando A, B o C. Sin micrófono.</p>
-                    <button class="btn-primary" style="padding: 10px; font-size: 1rem; background: #10b981; color: #000; width: 100%;" onclick="startGuideMode()">Iniciar Modo Guía</button>
+                    <button class="btn-primary" style="padding: 10px; font-size: 1rem; background: #10b981; color: #000; width: 100%;" onclick="startCleanGuideMode()">Iniciar Modo Guía</button>
                 </div>
                 <!-- MODO TUTOR -->
                 <div class="glass-panel" style="padding: 15px; grid-column: span 2; border: 1px solid var(--accent); background: rgba(34, 211, 238, 0.05);">
@@ -634,6 +659,23 @@
 
             <div class="grid-navigator" id="gridNav"></div>
         </div>
+
+        <!-- GUIDE SCREEN -->
+        <section id="guideScreen" class="hidden">
+            <div class="guide-card">
+                <div id="guideProgress">Pregunta 1 de 20</div>
+                <div id="guideQuestionText"></div>
+
+                <div id="guideOptions">
+                    <button id="guideBtnA" class="guide-option-btn"></button>
+                    <button id="guideBtnB" class="guide-option-btn"></button>
+                    <button id="guideBtnC" class="guide-option-btn"></button>
+                </div>
+
+                <div id="guideStatus" style="margin-top: 15px; color: #10B981; font-weight: bold;"></div>
+                <button id="guideExitBtn" class="btn-secondary" style="margin-top: 25px; width: 100%;" onclick="finishCleanGuide()">Finalizar / Salir</button>
+            </div>
+        </section>
 
         <!-- RESULTS SCREEN -->
         <div id="resultsScreen" class="hidden">
@@ -1500,6 +1542,178 @@
             if (guideCurrentIndex === activeIndex && activeMode === 'guide' && !guideQuestionResolved) {
                 startGuideCountdown();
             }
+        }
+
+        // --- NEW CLEAN GUIDE MODE ---
+
+        let cleanGuideIndex = 0;
+        let cleanGuideQuestions = [];
+        let cleanGuideResolved = false;
+        let cleanGuideTimer = null;
+
+        function startCleanGuideMode() {
+            console.log('[CLEAN GUIDE] start');
+            activeMode = 'cleanGuide';
+            window.speechSynthesis.cancel();
+            showOnlyScreen('guideScreen');
+
+            cleanGuideQuestions = [...questions].sort(() => Math.random() - 0.5).slice(0, 20);
+            if (cleanGuideQuestions.length === 0) cleanGuideQuestions = [...allQuestions].sort(() => Math.random() - 0.5).slice(0, 20);
+
+            cleanGuideIndex = 0;
+            loadCleanGuideQuestion();
+        }
+
+        function showOnlyScreen(id) {
+            ['homeScreen', 'quizScreen', 'resultsScreen', 'guideScreen'].forEach(screenId => {
+                const el = document.getElementById(screenId);
+                if (el) el.classList.add('hidden');
+            });
+            const target = document.getElementById(id);
+            if (target) target.classList.remove('hidden');
+        }
+
+        async function loadCleanGuideQuestion() {
+            cleanGuideResolved = false;
+            clearTimeout(cleanGuideTimer);
+            clearInterval(cleanGuideTimer); // Just in case it's an interval
+
+            const q = cleanGuideQuestions[cleanGuideIndex];
+            if (!q) {
+                finishCleanGuide();
+                return;
+            }
+
+            const options = q.opts || q.options || q.answers;
+            if (!options || options.length < 3) {
+                console.error('[CLEAN GUIDE] pregunta inválida', q);
+                cleanGuideIndex++;
+                loadCleanGuideQuestion();
+                return;
+            }
+
+            document.getElementById('guideProgress').textContent = `Pregunta ${cleanGuideIndex + 1} de ${cleanGuideQuestions.length}`;
+            document.getElementById('guideQuestionText').textContent = q.q;
+
+            document.getElementById('guideBtnA').innerHTML = `<strong>Opción A</strong><br>${options[0]}`;
+            document.getElementById('guideBtnB').innerHTML = `<strong>Opción B</strong><br>${options[1]}`;
+            document.getElementById('guideBtnC').innerHTML = `<strong>Opción C</strong><br>${options[2]}`;
+
+            document.getElementById('guideBtnA').onclick = () => answerCleanGuide(0);
+            document.getElementById('guideBtnB').onclick = () => answerCleanGuide(1);
+            document.getElementById('guideBtnC').onclick = () => answerCleanGuide(2);
+            document.getElementById('guideStatus').textContent = "Escuchando a Shivi...";
+
+            enableCleanGuideButtons(false); // Disable while speaking
+
+            await speakClean(`Pregunta ${cleanGuideIndex + 1}. ${q.q}`);
+            await speakClean(`Opción A. ${options[0]}`);
+            await speakClean(`Opción B. ${options[1]}`);
+            await speakClean(`Opción C. ${options[2]}`);
+
+            enableCleanGuideButtons(true);
+
+            if (!cleanGuideResolved && activeMode === 'cleanGuide') {
+                startCleanGuideTimer();
+            }
+        }
+
+        function speakClean(text) {
+            return new Promise(resolve => {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'es-ES';
+                let finished = false;
+                const done = () => {
+                    if (finished) return;
+                    finished = true;
+                    resolve();
+                };
+                utterance.onend = done;
+                utterance.onerror = done;
+                window.speechSynthesis.speak(utterance);
+                setTimeout(done, Math.max(2500, text.length * 75));
+            });
+        }
+
+        function startCleanGuideTimer() {
+            let seconds = 10;
+            const status = document.getElementById('guideStatus');
+            status.textContent = `Tiempo para responder: ${seconds}`;
+
+            cleanGuideTimer = setInterval(() => {
+                seconds--;
+                status.textContent = `Tiempo para responder: ${seconds}`;
+                if (seconds <= 0) {
+                    clearInterval(cleanGuideTimer);
+                    timeoutCleanGuide();
+                }
+            }, 1000);
+        }
+
+        function enableCleanGuideButtons(enable) {
+            ['guideBtnA', 'guideBtnB', 'guideBtnC'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.pointerEvents = enable ? 'auto' : 'none';
+            });
+        }
+
+        function getShortExplanation(q) {
+            const text = q.explanation || q.exp || '';
+            if (!text) return '';
+            return text.split('.')[0] + '.';
+        }
+
+        async function answerCleanGuide(index) {
+            if (cleanGuideResolved) return;
+            cleanGuideResolved = true;
+            clearInterval(cleanGuideTimer);
+            enableCleanGuideButtons(false);
+
+            const q = cleanGuideQuestions[cleanGuideIndex];
+            const correct = q.ans ?? q.correct ?? q.answer;
+            const labels = ['A', 'B', 'C'];
+
+            document.getElementById('guideStatus').textContent = "";
+
+            if (index === correct) {
+                if (window.confetti) confetti({ particleCount: 40, spread: 50, origin: { y: 0.8 }, colors: ['#10B981', '#ffffff'] });
+                await speakClean('Correcto.');
+            } else {
+                await speakClean(`No es correcta. La buena era la ${labels[correct]}.`);
+            }
+
+            await speakClean(getShortExplanation(q));
+
+            setTimeout(() => {
+                cleanGuideIndex++;
+                loadCleanGuideQuestion();
+            }, 800);
+        }
+
+        async function timeoutCleanGuide() {
+            if (cleanGuideResolved) return;
+            cleanGuideResolved = true;
+            enableCleanGuideButtons(false);
+
+            const q = cleanGuideQuestions[cleanGuideIndex];
+            const correct = q.ans ?? q.correct ?? q.answer;
+            const labels = ['A', 'B', 'C'];
+
+            document.getElementById('guideStatus').textContent = "Tiempo agotado";
+            await speakClean(`Se ha pasado el tiempo. La correcta es la ${labels[correct]}.`);
+            await speakClean(getShortExplanation(q));
+
+            setTimeout(() => {
+                cleanGuideIndex++;
+                loadCleanGuideQuestion();
+            }, 800);
+        }
+
+        function finishCleanGuide() {
+            activeMode = null;
+            window.speechSynthesis.cancel();
+            clearInterval(cleanGuideTimer);
+            showOnlyScreen('homeScreen');
         }
 
         function startGuideCountdown() {

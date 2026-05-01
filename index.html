@@ -1501,7 +1501,7 @@
             guideQuestionResolved = true;
             clearInterval(guideInterval);
             
-            const optsContainers = document.querySelectorAll('.option');
+            const optsContainers = document.querySelectorAll('.guide-option-btn');
             optsContainers.forEach(o => o.style.pointerEvents = 'none');
             
             const q = questions[guideCurrentIndex];
@@ -1512,7 +1512,6 @@
             updateVoiceStatus("Tiempo agotado", true);
             showAssistantMessage(msg, 5000);
             
-            const optsContainers = document.querySelectorAll('.guide-option-btn');
             if (optsContainers[q.ans]) {
                 optsContainers[q.ans].classList.add('success-border');
             }

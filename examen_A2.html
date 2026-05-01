@@ -629,6 +629,11 @@
         let isListening = false;
         let currentUtterance = null;
         let assistantTimeout = null;
+        let pendingLongExplanation = "";
+        let responseTimer = null;
+        let responseInterval = null;
+        let questionResolved = false;
+        let failedListenAttempts = 0;
 
         const TUTOR_STATES = {
             IDLE: 'IDLE',
@@ -968,8 +973,7 @@
             
             pendingLongExplanation = explanation || 'No hay explicación adicional.';
             
-            let shortEx = explanation ? explanation.split('.')[0] + '.' : '';
-            let msg = isCorrect ? 'Correcto. La clave es ' + shortEx : `No es la correcta. La buena era la ${['A', 'B', 'C'][q.ans]}. Recuerda que ${shortEx}`;
+            let msg = isCorrect ? 'Correcto.' : `No es correcta. La buena era la ${['A', 'B', 'C'][q.ans]}.`;
             
             msg += (currentIndex < questions.length - 1) ? '' : ' Has terminado el examen.';
             
@@ -1105,6 +1109,10 @@
             const activeIndex = currentIndex;
             stopAudio();
             
+            questionResolved = false;
+            clearTimeout(responseTimer);
+            clearInterval(responseInterval);
+            
             await new Promise(r => setTimeout(r, 100));
             if (currentIndex !== activeIndex || !audioActive) return;
 
@@ -1133,8 +1141,61 @@
             opts.forEach(o => o.classList.remove('reading-active'));
             if (voiceActive && currentIndex === activeIndex) {
                 showAssistantMessage('¿Qué alternativa eliges?', 3000);
-                speakText('¿Qué alternativa eliges?', () => startListening());
+                speakText('¿Qué alternativa eliges?', () => {
+                    startListening();
+                    startResponseTimer();
+                });
+            } else if (audioActive && examMode === 'tutor' && currentIndex === activeIndex) {
+                startResponseTimer();
             }
+        }
+
+        function startResponseTimer() {
+            clearTimeout(responseTimer);
+            clearInterval(responseInterval);
+            if (examMode !== 'tutor') return;
+            
+            let time = 10;
+            updateVoiceStatus(`Tiempo para responder: ${time}...`, true);
+            
+            responseInterval = setInterval(() => {
+                time--;
+                if (time > 0) {
+                    updateVoiceStatus(`Tiempo para responder: ${time}...`, true);
+                } else {
+                    clearInterval(responseInterval);
+                }
+            }, 1000);
+
+            responseTimer = setTimeout(handleNoResponse, 10000);
+        }
+
+        function handleNoResponse() {
+            if (questionResolved || examMode !== 'tutor') return;
+            questionResolved = true;
+            clearInterval(responseInterval);
+            
+            if (recognition && isListening) {
+                try { recognition.stop(); } catch(e) {}
+            }
+            
+            const q = questions[currentIndex];
+            const letter = ['A', 'B', 'C'][q.ans];
+            const shortEx = q.explanation ? q.explanation.split('.')[0] + '.' : '';
+            
+            tutorState = TUTOR_STATES.FEEDBACK;
+            const msg = `No has respondido. La correcta es la ${letter}. Recuerda que ${shortEx}`;
+            showAssistantMessage(msg, 5000);
+            updateVoiceStatus("Tiempo agotado", true);
+            
+            speakText(msg, () => {
+                if (currentIndex < questions.length - 1) {
+                    navigate(1);
+                } else {
+                    tutorState = TUTOR_STATES.FINISHED;
+                    showConfirmModal();
+                }
+            });
         }
 
 
@@ -1225,6 +1286,9 @@
 
         function loadQuestion(index) {
             stopAudio();
+            clearTimeout(responseTimer);
+            clearInterval(responseInterval);
+            questionResolved = false;
             currentIndex = index;
             const q = questions[index];
             
@@ -1279,6 +1343,14 @@
         }
 
         function selectOption(idx) {
+            if (examMode === 'tutor') {
+                if (questionResolved) return;
+                questionResolved = true;
+                clearTimeout(responseTimer);
+                clearInterval(responseInterval);
+                updateVoiceStatus("", false);
+            }
+
             if (userAnswers[currentIndex] !== null && examMode !== 'tutor') return; 
             
             userAnswers[currentIndex] = idx;

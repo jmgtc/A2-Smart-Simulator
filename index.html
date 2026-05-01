@@ -1465,7 +1465,7 @@
                 document.getElementById('timerDisplay').style.opacity = '0.3'; 
 
                 window.speechSynthesis.cancel();
-                if (hasSpeechRecognition && recognition) {
+                if (recognition) {
                     try { recognition.abort(); } catch(e) {}
                 }
                 

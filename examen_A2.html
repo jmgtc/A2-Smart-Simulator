@@ -524,10 +524,14 @@
                     <button class="btn-primary" style="padding: 8px; font-size: 0.9rem; background: #9333EA;">Ver Temas</button>
                 </div>
                 <!-- MODO TUTOR -->
-                <div class="glass-panel" style="padding: 15px; grid-column: span 2; border: 1px solid var(--accent); background: rgba(34, 211, 238, 0.05); cursor: pointer;" onclick="startExam('tutor')">
+                <div class="glass-panel" style="padding: 15px; grid-column: span 2; border: 1px solid var(--accent); background: rgba(34, 211, 238, 0.05);">
                     <h3 style="color: var(--accent); margin-bottom: 5px; font-size: 1.1rem;">🤖 Asistente IA / Tutor</h3>
                     <p style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 10px;">Tu tutor personal. Te guiará, te corregirá al momento y te explicará tus fallos por voz.</p>
-                    <button class="btn-primary" style="padding: 10px; font-size: 1rem; background: var(--accent); color: #000;">Iniciar Tutoría</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn-secondary" style="padding: 10px; font-size: 0.9rem; border-color: var(--accent); color: var(--accent);" onclick="startMicTest()">Probar micrófono</button>
+                        <button class="btn-primary" style="padding: 10px; font-size: 1rem; background: var(--accent); color: #000; flex: 1;" onclick="startExam('tutor')">Iniciar Tutoría</button>
+                    </div>
+                    <p id="micTestStatus" style="font-size: 0.8rem; margin-top: 10px; color: var(--success); display: none; text-align: center;">✅ Micrófono OK</p>
                 </div>
             </div>
         </div>
@@ -624,7 +628,8 @@
             FEEDBACK: 'FEEDBACK',
             CONFIRMING_SUBMIT: 'CONFIRMING_SUBMIT',
             FINISHED: 'FINISHED',
-            PAUSED: 'PAUSED'
+            PAUSED: 'PAUSED',
+            MIC_TEST: 'MIC_TEST'
         };
         let tutorState = TUTOR_STATES.IDLE;
         let failedListenAttempts = 0;
@@ -731,7 +736,9 @@
                 recognition.continuous = false;
                 recognition.onstart = () => { 
                     isListening = true; 
-                    if (tutorState !== TUTOR_STATES.SPEAKING) {
+                    if (tutorState === TUTOR_STATES.MIC_TEST) {
+                        updateVoiceStatus("Prueba de micrófono... di la A", true);
+                    } else if (tutorState !== TUTOR_STATES.SPEAKING) {
                         tutorState = TUTOR_STATES.LISTENING;
                         updateVoiceStatus("Escuchando… responde A, B o C", true);
                     }
@@ -746,6 +753,14 @@
                     if (quiz) quiz.classList.remove('listening');
                     const avatar = document.querySelector('.assistant-avatar');
                     if (avatar) avatar.classList.remove('listening-pulse');
+
+                    if (tutorState === TUTOR_STATES.MIC_TEST) {
+                        speakText("No te he entendido. Acércate al micrófono y di: la A.", () => {
+                            tutorState = TUTOR_STATES.MIC_TEST;
+                            try { recognition.start(); } catch(e){}
+                        });
+                        return;
+                    }
 
                     if (examMode === 'tutor' && voiceActive && userAnswers[currentIndex] === null && 
                         tutorState !== TUTOR_STATES.SPEAKING && tutorState !== TUTOR_STATES.PROCESSING && 
@@ -769,9 +784,14 @@
                     }
                 };
                 recognition.onresult = (event) => {
+                    const command = event.results[0][0].transcript;
+                    if (tutorState === TUTOR_STATES.MIC_TEST) {
+                        handleMicTestResult(command);
+                        return;
+                    }
+
                     tutorState = TUTOR_STATES.PROCESSING;
                     updateVoiceStatus("Procesando respuesta...", true);
-                    const command = event.results[0][0].transcript;
                     processVoiceCommand(command);
                 };
                 recognition.onerror = () => {
@@ -785,6 +805,51 @@
             if (synth.speaking || synth.pending) return;
             
             try { recognition.start(); } catch(e) {}
+        }
+
+        function startMicTest() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("Tu navegador no permite responder por voz. Usa Chrome o Edge para el modo manos libres completo.");
+                return;
+            }
+
+            voiceActive = true;
+            if (!recognition) initRecognition();
+
+            if (synth.speaking || synth.pending) synth.cancel();
+            if (isListening) {
+                try { recognition.stop(); } catch(e) {}
+            }
+
+            tutorState = TUTOR_STATES.MIC_TEST;
+            document.getElementById('micTestStatus').style.display = 'none';
+
+            speakText("Vamos a probar el micrófono. Di: la A.", () => {
+                if (tutorState === TUTOR_STATES.MIC_TEST) {
+                    try { recognition.start(); } catch(e){}
+                }
+            });
+        }
+
+        function handleMicTestResult(transcript) {
+            const cmd = transcript.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[.,?!¿¡]/g, "").trim();
+            console.log('[TUTOR] MIC_TEST detectó:', transcript, '->', cmd);
+            
+            if (cmd.match(/^(a|la a|opcion a|respuesta a|alfa)$/)) {
+                tutorState = TUTOR_STATES.IDLE;
+                const statusEl = document.getElementById('micTestStatus');
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.innerText = "✅ Micrófono OK";
+                }
+                speakText("Perfecto, te escucho bien. Ya puedes empezar el examen.");
+            } else {
+                speakText("No te he entendido. Acércate al micrófono y di: la A.", () => {
+                    tutorState = TUTOR_STATES.MIC_TEST;
+                    try { recognition.start(); } catch(e){}
+                });
+            }
         }
 
         function processVoiceCommand(rawCmd) {
@@ -1010,43 +1075,41 @@
         }
 
         
-        function speakSequentially(optionsOnly = false) {
+        async function speakSequentially(optionsOnly = false) {
             if (!audioActive) return;
             const q = questions[currentIndex];
+            const activeIndex = currentIndex;
             stopAudio();
             
-            const startReadingOptions = () => {
-                let optIdx = 0;
-                const opts = document.querySelectorAll('.option');
-                const readNextOption = () => {
-                    if (optIdx >= q.opts.length || !audioActive) return;
-                    
-                    opts.forEach(o => o.classList.remove('reading-active'));
-                    opts[optIdx].classList.add('reading-active');
-                    
-                    const letter = ['A', 'B', 'C'][optIdx];
-                    speakText(`Opción ${letter}: ${q.opts[optIdx]}`, () => {
-                        optIdx++;
-                        if (optIdx < q.opts.length) {
-                            setTimeout(readNextOption, 600);
-                        } else {
-                            opts.forEach(o => o.classList.remove('reading-active'));
-                            if (voiceActive) {
-                                setTimeout(() => {
-                                    showAssistantMessage('¿Qué alternativa eliges?', 3000);
-                                    speakText('¿Qué alternativa eliges?', () => startListening());
-                                }, 500);
-                            }
-                        }
-                    });
-                };
-                setTimeout(readNextOption, 800);
-            };
+            await new Promise(r => setTimeout(r, 100));
+            if (currentIndex !== activeIndex || !audioActive) return;
 
-            if (optionsOnly) {
-                startReadingOptions();
-            } else {
-                speakText(q.q, startReadingOptions);
+            if (!optionsOnly) {
+                await new Promise(resolve => speakText(q.q, resolve));
+                if (currentIndex !== activeIndex || !audioActive) return;
+                await new Promise(r => setTimeout(r, 800));
+            }
+
+            const opts = document.querySelectorAll('.option');
+            const labels = ['A', 'B', 'C'];
+
+            for (let i = 0; i < q.opts.length; i++) {
+                if (currentIndex !== activeIndex || !audioActive) return;
+                
+                opts.forEach(o => o.classList.remove('reading-active'));
+                if (opts[i]) opts[i].classList.add('reading-active');
+                
+                console.log('[TUTOR] Leyendo opción', labels[i], q.opts[i]);
+                
+                await new Promise(resolve => speakText(`Opción ${labels[i]}: ${q.opts[i]}`, resolve));
+                if (currentIndex !== activeIndex || !audioActive) return;
+                await new Promise(r => setTimeout(r, 600));
+            }
+
+            opts.forEach(o => o.classList.remove('reading-active'));
+            if (voiceActive && currentIndex === activeIndex) {
+                showAssistantMessage('¿Qué alternativa eliges?', 3000);
+                speakText('¿Qué alternativa eliges?', () => startListening());
             }
         }
 

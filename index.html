@@ -483,6 +483,7 @@
     <header>
         <h2><span>NLM</span> Autoescuela Virtual</h2>
         <div class="header-controls">
+            <button class="btn-secondary" id="btnHome" onclick="location.reload()" style="display: none; padding: 6px 12px; font-size: 0.85rem; border-color: rgba(255,255,255,0.2); margin-right: 5px;">🏠 Inicio</button>
             <button class="audio-toggle" id="audioToggle" onclick="toggleAudioMode()">
                 <span id="audioIcon">🔈</span> Audio Off
             </button>
@@ -1446,6 +1447,7 @@
             examMode = mode;
             currentCategory = category;
             closeCategoryModal();
+            document.getElementById('btnHome').style.display = 'block';
 
             if (mode === 'guide') {
                 console.log('[GUIDE] initializing setup');

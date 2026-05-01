@@ -276,6 +276,45 @@
             100% { transform: scale(1); opacity: 1; }
         }
 
+        .guide-options {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-top: 24px;
+        }
+
+        .guide-option-btn {
+            width: 100%;
+            padding: 18px;
+            border-radius: 18px;
+            font-size: 18px;
+            text-align: left;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.16);
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .guide-option-btn:active {
+            transform: scale(0.98);
+        }
+
+        .guide-option-btn.reading-active {
+            border-color: var(--accent);
+            background: rgba(34, 211, 238, 0.1);
+        }
+
+        .guide-option-btn.success-border {
+            border-color: #10B981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .guide-option-btn.error-border {
+            border-color: #EF4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
         .actions {
             display: flex;
             justify-content: space-between;
@@ -576,6 +615,8 @@
             <div class="question-text" id="qText">Cargando pregunta...</div>
             
             <div id="optionsContainer"></div>
+            
+            <div id="guideOptionsContainer" class="guide-options" style="display: none;"></div>
 
             <div class="actions">
                 <button class="btn-secondary" id="btnPrev" onclick="navigate(-1)">Anterior</button>
@@ -1256,7 +1297,19 @@
             });
         }
 
-        // --- SHIVI TE GUÍA (AISLADO) ---
+        function setupGuideUI() {
+            document.body.classList.add('guide-mode');
+
+            document.getElementById('btnPrev').style.display = 'none';
+            document.getElementById('btnNext').style.display = 'none';
+            document.getElementById('btnFinish').style.display = 'none';
+            document.getElementById('gridNav').style.display = 'none';
+            document.getElementById('btnReplay').style.display = 'none';
+            document.getElementById('optionsContainer').style.display = 'none';
+
+            const guideOpts = document.getElementById('guideOptionsContainer');
+            if (guideOpts) guideOpts.style.display = 'flex';
+        }
 
         async function startGuideMode() {
             console.log('[GUIDE] startGuideMode');
@@ -1276,6 +1329,7 @@
             voiceActive = false;
             
             showScreen('quizScreen');
+            setupGuideUI();
 
             document.getElementById('btnHome').style.display = 'block';
             
@@ -1284,7 +1338,6 @@
             btn.innerHTML = `<span>🔊</span> Audio On`;
             
             document.getElementById('btnReactivateTutor').style.display = 'none';
-            document.getElementById('btnReplay').style.display = 'block';
             document.getElementById('timerDisplay').style.opacity = '0.3'; 
 
             guideCurrentIndex = 0;
@@ -1308,6 +1361,30 @@
             if (activeMode !== 'guide') return;
 
             await loadGuideQuestion(guideCurrentIndex);
+        }
+
+        function renderGuideOptions(q) {
+            const container = document.getElementById('guideOptionsContainer');
+            if (!container) {
+                console.error('[GUIDE] guideOptionsContainer no existe');
+                return;
+            }
+
+            container.innerHTML = '';
+            const labels = ['A', 'B', 'C'];
+
+            q.opts.forEach((option, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'guide-option-btn fade-in';
+                btn.style.animationDelay = `${index * 0.1}s`;
+                btn.style.pointerEvents = 'none'; // Desactivado inicialmente
+                
+                if (userAnswers[guideCurrentIndex] === index) btn.classList.add('selected');
+                
+                btn.innerHTML = `<strong>Opción ${labels[index]}</strong><br>${option}`;
+                btn.onclick = () => handleGuideAnswer(index);
+                container.appendChild(btn);
+            });
         }
 
         async function loadGuideQuestion(index) {
@@ -1336,7 +1413,6 @@
 
             const qNum = document.getElementById('qNumber');
             const qText = document.getElementById('qText');
-            const optsContainer = document.getElementById('optionsContainer');
             
             qText.classList.remove('fade-in');
             void qText.offsetWidth;
@@ -1356,30 +1432,7 @@
                 imgCont.classList.add('hidden');
             }
 
-            optsContainer.innerHTML = '';
-            q.opts.forEach((opt, idx) => {
-                const optEl = document.createElement('div');
-                optEl.className = 'option fade-in';
-                optEl.style.animationDelay = `${idx * 0.1}s`;
-                optEl.style.pointerEvents = 'none'; // Desactivado inicialmente
-                
-                if (userAnswers[index] === idx) optEl.classList.add('selected');
-                optEl.innerHTML = `<div class="opt-letter">${['A','B','C'][idx]}</div><div>${opt}</div>`;
-                optEl.onclick = () => handleGuideAnswer(idx);
-                optsContainer.appendChild(optEl);
-            });
-
-            document.getElementById('btnPrev').style.visibility = 'hidden';
-            document.getElementById('btnNext').style.display = 'none';
-            document.getElementById('btnFinish').style.display = 'none';
-
-            // Custom grid override for guide
-            const nav = document.getElementById('gridNav');
-            Array.from(nav.children).forEach((cell, i) => {
-                cell.className = 'grid-cell';
-                if (userAnswers[i] !== null) cell.classList.add('answered');
-                if (i === guideCurrentIndex) cell.classList.add('active');
-            });
+            renderGuideOptions(q);
 
             await speakGuideQuestionAndOptions();
         }
@@ -1395,7 +1448,7 @@
             await speakText(`Pregunta ${guideCurrentIndex + 1}. ${q.q}`);
             if (guideCurrentIndex !== activeIndex || activeMode !== 'guide') return;
 
-            const opts = document.querySelectorAll('.option');
+            const opts = document.querySelectorAll('.guide-option-btn');
             const labels = ['A', 'B', 'C'];
 
             for (let i = 0; i < q.opts.length; i++) {
@@ -1419,7 +1472,7 @@
             if (activeMode !== 'guide' || guideQuestionResolved) return;
             console.log('[GUIDE] countdown start');
             
-            const optsContainers = document.querySelectorAll('.option');
+            const optsContainers = document.querySelectorAll('.guide-option-btn');
             optsContainers.forEach(o => o.style.pointerEvents = 'auto');
             
             clearInterval(guideInterval);
@@ -1459,6 +1512,7 @@
             updateVoiceStatus("Tiempo agotado", true);
             showAssistantMessage(msg, 5000);
             
+            const optsContainers = document.querySelectorAll('.guide-option-btn');
             if (optsContainers[q.ans]) {
                 optsContainers[q.ans].classList.add('success-border');
             }
@@ -1478,15 +1532,8 @@
             updateVoiceStatus("", false);
             
             userAnswers[guideCurrentIndex] = idx;
-            const opts = document.querySelectorAll('.option');
+            const opts = document.querySelectorAll('.guide-option-btn');
             opts.forEach(o => o.style.pointerEvents = 'none');
-            
-            const nav = document.getElementById('gridNav');
-            Array.from(nav.children).forEach((cell, i) => {
-                cell.className = 'grid-cell';
-                if (userAnswers[i] !== null) cell.classList.add('answered');
-                if (i === guideCurrentIndex) cell.classList.add('active');
-            });
             
             const q = questions[guideCurrentIndex];
             const isCorrect = (idx === q.ans);

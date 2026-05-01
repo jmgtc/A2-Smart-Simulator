@@ -1116,45 +1116,48 @@
 
         window.utterances = []; // Fix for Safari/Chrome garbage collection bug
         function speakText(text, callback) {
-            if (voiceActive) {
-                if (recognition && isListening) {
-                    try { recognition.stop(); } catch(e) {}
-                }
-                tutorState = TUTOR_STATES.SPEAKING;
-                updateVoiceStatus("Shivi hablando...", true);
-            }
-
-            const ut = new SpeechSynthesisUtterance(text);
-            window.utterances.push(ut); // Keep reference to prevent GC
-
-            ut.lang = 'es-ES';
-            ut.rate = 1.0;
-            const voice = getBestVoice();
-            if (voice) ut.voice = voice;
-            
-            let called = false;
-            const finish = () => {
-                if (called) return;
-                called = true;
+            return new Promise((resolve) => {
                 if (voiceActive) {
-                    tutorState = TUTOR_STATES.IDLE;
-                    updateVoiceStatus("", false);
+                    if (recognition && isListening) {
+                        try { recognition.stop(); } catch(e) {}
+                    }
+                    tutorState = TUTOR_STATES.SPEAKING;
+                    updateVoiceStatus("Shivi hablando...", true);
                 }
-                if (callback) callback();
-            };
 
-            ut.onend = finish;
-            ut.onerror = (e) => {
-                console.warn("[SPEECH] error:", e);
-                finish();
-            };
+                const ut = new SpeechSynthesisUtterance(text);
+                window.utterances.push(ut); // Keep reference to prevent GC
 
-            currentUtterance = ut;
-            synth.speak(ut);
-            
-            // Safety fallback (approx. reading speed)
-            const fallbackTimeout = (text.length / 10) * 1000 + 3000;
-            setTimeout(finish, fallbackTimeout);
+                ut.lang = 'es-ES';
+                ut.rate = 1.0;
+                const voice = getBestVoice();
+                if (voice) ut.voice = voice;
+                
+                let called = false;
+                const finish = () => {
+                    if (called) return;
+                    called = true;
+                    if (voiceActive) {
+                        tutorState = TUTOR_STATES.IDLE;
+                        updateVoiceStatus("", false);
+                    }
+                    if (callback) callback();
+                    resolve();
+                };
+
+                ut.onend = finish;
+                ut.onerror = (e) => {
+                    console.warn("[SPEECH] error:", e);
+                    finish();
+                };
+
+                currentUtterance = ut;
+                synth.speak(ut);
+                
+                // Safety fallback as requested
+                const fallbackTimeout = Math.max(3000, text.length * 80);
+                setTimeout(finish, fallbackTimeout);
+            });
         }
 
         
@@ -1255,10 +1258,10 @@
 
         // --- SHIVI TE GUÍA (AISLADO) ---
 
-        function startGuideMode() {
+        async function startGuideMode() {
+            console.log('[GUIDE] startGuideMode');
             activeMode = 'guide';
             examMode = 'guide';
-            console.log('[GUIDE] start');
 
             // Cortar todo lo anterior
             window.speechSynthesis.cancel();
@@ -1296,16 +1299,18 @@
             
             initGrid();
 
-            setTimeout(() => {
-                updateVoiceStatus("Modo Guía iniciado", false);
-                showAssistantMessage("Te leeré cada pregunta. Puedes responder tocando A, B o C. Si no respondes, te diré la correcta y seguiré.", 6000);
-                speakText("Te leeré cada pregunta. Puedes responder tocando A, B o C. Si no respondes, te diré la correcta y seguiré.", () => {
-                    loadGuideQuestion(guideCurrentIndex);
-                });
-            }, 100);
+            console.log('[GUIDE] intro start');
+            updateVoiceStatus("Modo Guía iniciado", false);
+            showAssistantMessage("Te leeré cada pregunta. Puedes responder tocando A, B o C. Si no respondes, te diré la correcta y seguiré.", 6000);
+            await speakText("Te leeré cada pregunta. Puedes responder tocando A, B o C. Si no respondes, te diré la correcta y seguiré.");
+            console.log('[GUIDE] intro end');
+
+            if (activeMode !== 'guide') return;
+
+            await loadGuideQuestion(guideCurrentIndex);
         }
 
-        function loadGuideQuestion(index) {
+        async function loadGuideQuestion(index) {
             if (activeMode !== 'guide') return;
             console.log('[GUIDE] load question', index);
             
@@ -1314,9 +1319,21 @@
             
             clearTimeout(guideTimer);
             clearInterval(guideInterval);
-            window.speechSynthesis.cancel();
             
             const q = questions[index];
+            if (!q) {
+                showConfirmModal();
+                return;
+            }
+
+            if (!q.opts || q.opts.length < 3) {
+                console.error('[GUIDE] pregunta inválida', q);
+                goToNextGuideQuestion();
+                return;
+            }
+            
+            console.log('[GUIDE] question object', q);
+
             const qNum = document.getElementById('qNumber');
             const qText = document.getElementById('qText');
             const optsContainer = document.getElementById('optionsContainer');
@@ -1364,20 +1381,19 @@
                 if (i === guideCurrentIndex) cell.classList.add('active');
             });
 
-            setTimeout(speakGuideQuestionAndOptions, 500);
+            await speakGuideQuestionAndOptions();
         }
 
         async function speakGuideQuestionAndOptions() {
             if (activeMode !== 'guide' || guideQuestionResolved) return;
-            console.log('[GUIDE] speaking question');
+            console.log('[GUIDE] speak question start');
             
             const q = questions[guideCurrentIndex];
             const activeIndex = guideCurrentIndex;
             updateVoiceStatus("Shivi hablando...", true);
             
-            await new Promise(resolve => speakText(q.q, resolve));
+            await speakText(`Pregunta ${guideCurrentIndex + 1}. ${q.q}`);
             if (guideCurrentIndex !== activeIndex || activeMode !== 'guide') return;
-            await new Promise(r => setTimeout(r, 800));
 
             const opts = document.querySelectorAll('.option');
             const labels = ['A', 'B', 'C'];
@@ -1388,13 +1404,13 @@
                 opts.forEach(o => o.classList.remove('reading-active'));
                 if (opts[i]) opts[i].classList.add('reading-active');
                 
-                await new Promise(resolve => speakText(`Opción ${labels[i]}: ${q.opts[i]}`, resolve));
-                if (guideCurrentIndex !== activeIndex || activeMode !== 'guide') return;
-                await new Promise(r => setTimeout(r, 600));
+                console.log(`[GUIDE] speak option ${labels[i]}`);
+                await speakText(`Opción ${labels[i]}. ${q.opts[i]}`);
             }
 
             opts.forEach(o => o.classList.remove('reading-active'));
-            if (guideCurrentIndex === activeIndex && activeMode === 'guide') {
+            
+            if (guideCurrentIndex === activeIndex && activeMode === 'guide' && !guideQuestionResolved) {
                 startGuideCountdown();
             }
         }
@@ -1406,23 +1422,24 @@
             const optsContainers = document.querySelectorAll('.option');
             optsContainers.forEach(o => o.style.pointerEvents = 'auto');
             
+            clearInterval(guideInterval);
+            clearTimeout(guideTimer);
+
             guideCountdown = 10;
             updateVoiceStatus(`Tiempo para responder: ${guideCountdown}`, true);
             
             guideInterval = setInterval(() => {
-                if (activeMode !== 'guide' || guideQuestionResolved) {
-                    clearInterval(guideInterval);
-                    return;
-                }
                 guideCountdown--;
-                if (guideCountdown > 0) {
-                    updateVoiceStatus(`Tiempo para responder: ${guideCountdown}`, true);
-                } else {
+                updateVoiceStatus(`Tiempo para responder: ${guideCountdown}`, true);
+
+                if (guideCountdown <= 0) {
                     clearInterval(guideInterval);
                 }
             }, 1000);
 
-            guideTimer = setTimeout(handleGuideTimeout, 10000);
+            guideTimer = setTimeout(() => {
+                handleGuideTimeout();
+            }, 10000);
         }
 
         function handleGuideTimeout() {

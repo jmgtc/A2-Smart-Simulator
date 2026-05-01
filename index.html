@@ -1565,6 +1565,9 @@
         }
 
         function showOnlyScreen(id) {
+            if (id !== 'guideScreen' && activeMode === 'cleanGuide') {
+                stopCleanGuideMode();
+            }
             ['homeScreen', 'quizScreen', 'resultsScreen', 'guideScreen'].forEach(screenId => {
                 const el = document.getElementById(screenId);
                 if (el) el.classList.add('hidden');
@@ -1575,8 +1578,11 @@
 
         async function loadCleanGuideQuestion() {
             cleanGuideResolved = false;
-            clearTimeout(cleanGuideTimer);
-            clearInterval(cleanGuideTimer); // Just in case it's an interval
+            if (cleanGuideTimer) {
+                clearInterval(cleanGuideTimer);
+                clearTimeout(cleanGuideTimer);
+                cleanGuideTimer = null;
+            }
 
             const q = cleanGuideQuestions[cleanGuideIndex];
             if (!q) {
@@ -1607,9 +1613,16 @@
             enableCleanGuideButtons(false); // Disable while speaking
 
             await speakClean(`Pregunta ${cleanGuideIndex + 1}. ${q.q}`);
+            if (activeMode !== 'cleanGuide') return;
+
             await speakClean(`Opción A. ${options[0]}`);
+            if (activeMode !== 'cleanGuide') return;
+
             await speakClean(`Opción B. ${options[1]}`);
+            if (activeMode !== 'cleanGuide') return;
+
             await speakClean(`Opción C. ${options[2]}`);
+            if (activeMode !== 'cleanGuide') return;
 
             enableCleanGuideButtons(true);
 
@@ -1620,18 +1633,28 @@
 
         function speakClean(text) {
             return new Promise(resolve => {
+                if (activeMode !== 'cleanGuide') {
+                    resolve();
+                    return;
+                }
+
+                let fallbackId = null;
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = 'es-ES';
                 let finished = false;
+
                 const done = () => {
                     if (finished) return;
                     finished = true;
+                    if (fallbackId) clearTimeout(fallbackId);
                     resolve();
                 };
+
                 utterance.onend = done;
                 utterance.onerror = done;
+
                 window.speechSynthesis.speak(utterance);
-                setTimeout(done, Math.max(2500, text.length * 75));
+                fallbackId = setTimeout(done, Math.max(2500, text.length * 75));
             });
         }
 
@@ -1681,10 +1704,13 @@
             } else {
                 await speakClean(`No es correcta. La buena era la ${labels[correct]}.`);
             }
+            if (activeMode !== 'cleanGuide') return;
 
             await speakClean(getShortExplanation(q));
+            if (activeMode !== 'cleanGuide') return;
 
             setTimeout(() => {
+                if (activeMode !== 'cleanGuide') return;
                 cleanGuideIndex++;
                 loadCleanGuideQuestion();
             }, 800);
@@ -1701,18 +1727,33 @@
 
             document.getElementById('guideStatus').textContent = "Tiempo agotado";
             await speakClean(`Se ha pasado el tiempo. La correcta es la ${labels[correct]}.`);
+            if (activeMode !== 'cleanGuide') return;
+
             await speakClean(getShortExplanation(q));
+            if (activeMode !== 'cleanGuide') return;
 
             setTimeout(() => {
+                if (activeMode !== 'cleanGuide') return;
                 cleanGuideIndex++;
                 loadCleanGuideQuestion();
             }, 800);
         }
 
-        function finishCleanGuide() {
+        function stopCleanGuideMode() {
+            console.log('[CLEAN GUIDE] stop');
             activeMode = null;
+            cleanGuideResolved = true;
+            if (cleanGuideTimer) {
+                clearInterval(cleanGuideTimer);
+                clearTimeout(cleanGuideTimer);
+                cleanGuideTimer = null;
+            }
             window.speechSynthesis.cancel();
-            clearInterval(cleanGuideTimer);
+            enableCleanGuideButtons(false);
+        }
+
+        function finishCleanGuide() {
+            stopCleanGuideMode();
             showOnlyScreen('homeScreen');
         }
 

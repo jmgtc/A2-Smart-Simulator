@@ -658,8 +658,6 @@
             MIC_TEST: 'MIC_TEST'
         };
         let tutorState = TUTOR_STATES.IDLE;
-        let failedListenAttempts = 0;
-        let pendingLongExplanation = '';
         const DB_VERSION = "2026-05-01";
 
         function updateVoiceStatus(text, isActive = true) {
@@ -1213,18 +1211,6 @@
         }
 
         // --- SHIVI TE GUÍA (AISLADO) ---
-        function resumeTutor() {
-            if (activeMode === 'guide') return;
-            if (examMode !== 'tutor') return;
-            updateVoiceStatus("Escuchando...", false);
-            guideCurrentIndex = 0;
-            userAnswers = new Array(questions.length).fill(null);
-            
-            document.getElementById('timerDisplay').style.display = 'block';
-            initGrid();
-            
-            loadGuideQuestion(guideCurrentIndex);
-        }
 
         function startGuideMode() {
             if (activeMode !== 'guide') return;
@@ -1436,17 +1422,6 @@
             }
         }
         // --- FIN SHIVI TE GUÍA ---
-
-        function processVoiceCommand(command) {
-            if (activeMode === 'guide') return;
-            if (examMode !== 'tutor') return;
-            console.log("Comando recibido:", command);
-            if (guideCurrentIndex < questions.length - 1) {
-                loadGuideQuestion(guideCurrentIndex + 1);
-            } else {
-                showConfirmModal();
-            }
-        }
 
         function startExam(mode, category = null) {
             activeMode = mode;

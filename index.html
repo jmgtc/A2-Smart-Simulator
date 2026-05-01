@@ -839,6 +839,7 @@
         }
 
         function startListening() {
+            if (activeMode === 'guide') return;
             if (isIOS) return;
             if (!voiceActive || !recognition || tutorState === TUTOR_STATES.SPEAKING || tutorState === TUTOR_STATES.PAUSED || tutorState === TUTOR_STATES.FINISHED) return;
             if (synth.speaking || synth.pending) return;
@@ -847,6 +848,7 @@
         }
 
         function startMicTest() {
+            if (activeMode === 'guide') return;
             if (isIOS) return;
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
@@ -893,6 +895,7 @@
         }
 
         function processVoiceCommand(rawCmd) {
+            if (activeMode === 'guide') return;
             if (!questions || questions.length === 0) return;
             if (tutorState === TUTOR_STATES.PAUSED) return;
 
@@ -1209,55 +1212,141 @@
             });
         }
 
-        async function runGuideSequence() {
-            if (!guideModeActive) return;
-            const q = questions[currentIndex];
-            const activeIndex = currentIndex;
+        // --- SHIVI TE GUÍA (AISLADO) ---
+        function resumeTutor() {
+            if (activeMode === 'guide') return;
+            if (examMode !== 'tutor') return;
+            updateVoiceStatus("Escuchando...", false);
+            guideCurrentIndex = 0;
+            userAnswers = new Array(questions.length).fill(null);
             
-            window.speechSynthesis.cancel();
+            document.getElementById('timerDisplay').style.display = 'block';
+            initGrid();
             
+            loadGuideQuestion(guideCurrentIndex);
+        }
+
+        function startGuideMode() {
+            if (activeMode !== 'guide') return;
+            console.log('[GUIDE] start');
+            guideCurrentIndex = 0;
+            userAnswers = new Array(questions.length).fill(null);
+            
+            document.getElementById('timerDisplay').style.display = 'block';
+            initGrid();
+            
+            loadGuideQuestion(guideCurrentIndex);
+        }
+
+        function loadGuideQuestion(index) {
+            if (activeMode !== 'guide') return;
+            console.log('[GUIDE] load question', index);
+            
+            guideCurrentIndex = index;
             guideQuestionResolved = false;
+            
             clearTimeout(guideTimer);
             clearInterval(guideInterval);
+            window.speechSynthesis.cancel();
             
+            const q = questions[index];
+            const qNum = document.getElementById('qNumber');
+            const qText = document.getElementById('qText');
+            const optsContainer = document.getElementById('optionsContainer');
+            
+            qText.classList.remove('fade-in');
+            void qText.offsetWidth;
+            qText.classList.add('fade-in');
+            
+            qNum.innerText = `Pregunta ${index + 1} de ${questions.length}`;
+            const prog = ((index + 1) / questions.length) * 100;
+            document.getElementById('progressBar').style.width = `${prog}%`;
+            qText.innerText = q.q;
+            
+            const imgCont = document.getElementById('qImageContainer');
+            const imgEl = document.getElementById('qImage');
+            if (q.img) {
+                imgEl.src = q.img;
+                imgCont.classList.remove('hidden');
+            } else {
+                imgCont.classList.add('hidden');
+            }
+
+            optsContainer.innerHTML = '';
+            q.opts.forEach((opt, idx) => {
+                const optEl = document.createElement('div');
+                optEl.className = 'option fade-in';
+                optEl.style.animationDelay = `${idx * 0.1}s`;
+                optEl.style.pointerEvents = 'none'; // Desactivado inicialmente
+                
+                if (userAnswers[index] === idx) optEl.classList.add('selected');
+                optEl.innerHTML = `<div class="opt-letter">${['A','B','C'][idx]}</div><div>${opt}</div>`;
+                optEl.onclick = () => handleGuideAnswer(idx);
+                optsContainer.appendChild(optEl);
+            });
+
+            document.getElementById('btnPrev').style.visibility = index === 0 ? 'hidden' : 'visible';
+            document.getElementById('btnNext').style.display = index === (questions.length - 1) ? 'none' : 'block';
+            document.getElementById('btnFinish').style.display = index === (questions.length - 1) ? 'block' : 'none';
+
+            // Custom grid override for guide
+            const nav = document.getElementById('gridNav');
+            Array.from(nav.children).forEach((cell, i) => {
+                cell.className = 'grid-cell';
+                if (userAnswers[i] !== null) cell.classList.add('answered');
+                if (i === guideCurrentIndex) cell.classList.add('active');
+            });
+
+            setTimeout(speakGuideQuestionAndOptions, 500);
+        }
+
+        async function speakGuideQuestionAndOptions() {
+            if (activeMode !== 'guide' || guideQuestionResolved) return;
+            console.log('[GUIDE] speaking question');
+            
+            const q = questions[guideCurrentIndex];
+            const activeIndex = guideCurrentIndex;
             updateVoiceStatus("Shivi hablando...", true);
             
             await new Promise(resolve => speakText(q.q, resolve));
-            if (currentIndex !== activeIndex || !guideModeActive) return;
+            if (guideCurrentIndex !== activeIndex || activeMode !== 'guide') return;
             await new Promise(r => setTimeout(r, 800));
 
             const opts = document.querySelectorAll('.option');
             const labels = ['A', 'B', 'C'];
 
             for (let i = 0; i < q.opts.length; i++) {
-                if (currentIndex !== activeIndex || !guideModeActive) return;
+                if (guideCurrentIndex !== activeIndex || activeMode !== 'guide') return;
                 
                 opts.forEach(o => o.classList.remove('reading-active'));
                 if (opts[i]) opts[i].classList.add('reading-active');
                 
                 await new Promise(resolve => speakText(`Opción ${labels[i]}: ${q.opts[i]}`, resolve));
-                if (currentIndex !== activeIndex || !guideModeActive) return;
+                if (guideCurrentIndex !== activeIndex || activeMode !== 'guide') return;
                 await new Promise(r => setTimeout(r, 600));
             }
 
             opts.forEach(o => o.classList.remove('reading-active'));
-            if (currentIndex === activeIndex && guideModeActive) {
-                const optsContainers = document.querySelectorAll('.option');
-                optsContainers.forEach(o => o.style.pointerEvents = 'auto');
-                updateVoiceStatus("Elige una respuesta", true);
-                startGuideTimer();
+            if (guideCurrentIndex === activeIndex && activeMode === 'guide') {
+                startGuideCountdown();
             }
         }
 
-        function startGuideTimer() {
-            clearTimeout(guideTimer);
-            clearInterval(guideInterval);
-            if (!guideModeActive) return;
+        function startGuideCountdown() {
+            if (activeMode !== 'guide' || guideQuestionResolved) return;
+            console.log('[GUIDE] countdown start');
+            
+            const optsContainers = document.querySelectorAll('.option');
+            optsContainers.forEach(o => o.style.pointerEvents = 'auto');
             
             guideCountdown = 10;
             updateVoiceStatus(`Tiempo para responder: ${guideCountdown}`, true);
             
             guideInterval = setInterval(() => {
+                if (activeMode !== 'guide' || guideQuestionResolved) {
+                    clearInterval(guideInterval);
+                    return;
+                }
                 guideCountdown--;
                 if (guideCountdown > 0) {
                     updateVoiceStatus(`Tiempo para responder: ${guideCountdown}`, true);
@@ -1266,15 +1355,19 @@
                 }
             }, 1000);
 
-            guideTimer = setTimeout(handleGuideNoResponse, 10000);
+            guideTimer = setTimeout(handleGuideTimeout, 10000);
         }
 
-        function handleGuideNoResponse() {
-            if (guideQuestionResolved || !guideModeActive) return;
+        function handleGuideTimeout() {
+            if (activeMode !== 'guide' || guideQuestionResolved) return;
+            console.log('[GUIDE] timeout');
             guideQuestionResolved = true;
             clearInterval(guideInterval);
             
-            const q = questions[currentIndex];
+            const optsContainers = document.querySelectorAll('.option');
+            optsContainers.forEach(o => o.style.pointerEvents = 'none');
+            
+            const q = questions[guideCurrentIndex];
             const letter = ['A', 'B', 'C'][q.ans];
             const shortEx = q.explanation ? q.explanation.split('.')[0] + '.' : '';
             
@@ -1282,29 +1375,140 @@
             updateVoiceStatus("Tiempo agotado", true);
             showAssistantMessage(msg, 5000);
             
-            const opts = document.querySelectorAll('.option');
-            opts.forEach(o => o.style.pointerEvents = 'none');
+            if (optsContainers[q.ans]) {
+                optsContainers[q.ans].classList.add('success-border');
+            }
             
             window.speechSynthesis.cancel();
             speakText(msg, () => {
-                setTimeout(() => {
-                    if (currentIndex < questions.length - 1) {
-                        navigate(1);
-                    } else {
-                        showConfirmModal();
-                    }
-                }, 800);
+                setTimeout(goToNextGuideQuestion, 800);
             });
         }
 
+        function handleGuideAnswer(idx) {
+            if (activeMode !== 'guide' || guideQuestionResolved) return;
+            console.log('[GUIDE] manual answer', idx);
+            guideQuestionResolved = true;
+            clearTimeout(guideTimer);
+            clearInterval(guideInterval);
+            updateVoiceStatus("", false);
+            
+            userAnswers[guideCurrentIndex] = idx;
+            const opts = document.querySelectorAll('.option');
+            opts.forEach(o => o.style.pointerEvents = 'none');
+            
+            const nav = document.getElementById('gridNav');
+            Array.from(nav.children).forEach((cell, i) => {
+                cell.className = 'grid-cell';
+                if (userAnswers[i] !== null) cell.classList.add('answered');
+                if (i === guideCurrentIndex) cell.classList.add('active');
+            });
+            
+            const q = questions[guideCurrentIndex];
+            const isCorrect = (idx === q.ans);
+
+            if (isCorrect) {
+                opts[idx].classList.add('selected', 'success-border');
+                if (window.confetti) confetti({ particleCount: 40, spread: 50, origin: { y: 0.8 }, colors: ['#10B981', '#ffffff'] });
+            } else {
+                opts[idx].classList.add('selected', 'error-border');
+                opts[q.ans].classList.add('success-border');
+            }
+
+            const shortEx = q.explanation ? q.explanation.split('.')[0] + '.' : '';
+            let msg = isCorrect ? 'Correcto.' : `No es correcta. La buena era la ${['A', 'B', 'C'][q.ans]}.`;
+            msg += ` ${shortEx}`;
+            
+            showAssistantMessage(msg, 5000);
+            window.speechSynthesis.cancel();
+            speakText(msg, () => {
+                setTimeout(goToNextGuideQuestion, 800);
+            });
+        }
+
+        function goToNextGuideQuestion() {
+            if (activeMode !== 'guide') return;
+            console.log('[GUIDE] next question');
+            if (guideCurrentIndex < questions.length - 1) {
+                loadGuideQuestion(guideCurrentIndex + 1);
+            } else {
+                showConfirmModal();
+            }
+        }
+        // --- FIN SHIVI TE GUÍA ---
+
+        function processVoiceCommand(command) {
+            if (activeMode === 'guide') return;
+            if (examMode !== 'tutor') return;
+            console.log("Comando recibido:", command);
+            if (guideCurrentIndex < questions.length - 1) {
+                loadGuideQuestion(guideCurrentIndex + 1);
+            } else {
+                showConfirmModal();
+            }
+        }
 
         function startExam(mode, category = null) {
+            activeMode = mode;
             examMode = mode;
             currentCategory = category;
             closeCategoryModal();
 
-            // Configurar modo
-            if (mode === 'audio' || mode === 'tutor' || mode === 'guide') {
+            if (mode === 'guide') {
+                console.log('[GUIDE] initializing setup');
+                document.getElementById('introScreen').classList.add('hidden');
+                document.getElementById('resultsScreen').classList.add('hidden');
+                document.getElementById('categoryModal').classList.remove('active');
+                document.getElementById('quizScreen').classList.remove('hidden');
+
+                audioActive = true;
+                voiceActive = false;
+                
+                const btn = document.getElementById('audioToggle');
+                btn.classList.add('active');
+                btn.innerHTML = `<span>🔊</span> Audio On`;
+                
+                document.getElementById('btnReplay').style.display = 'block';
+                document.getElementById('timerDisplay').style.opacity = '0.3'; 
+
+                window.speechSynthesis.cancel();
+                if (hasSpeechRecognition && recognition) {
+                    try { recognition.abort(); } catch(e) {}
+                }
+                
+                clearTimeout(responseTimer);
+                clearInterval(responseInterval);
+                clearTimeout(guideTimer);
+                clearInterval(guideInterval);
+
+                if (mode === 'smart') {
+                    questions = allQuestions.filter(q => stats.failedQuestions.includes(q.q));
+                    if (questions.length > 20) questions = questions.sort(() => 0.5 - Math.random()).slice(0, 20);
+                } else if (mode === 'category') {
+                    questions = allQuestions.filter(q => q.tags && q.tags.includes(category));
+                    if (questions.length > 20) questions = questions.sort(() => 0.5 - Math.random()).slice(0, 20);
+                } else {
+                    questions = [...allQuestions].sort(() => Math.random() - 0.5).slice(0, 20);
+                }
+
+                if (questions.length === 0) {
+                    alert("No hay preguntas disponibles para este modo.");
+                    return;
+                }
+                
+                setTimeout(() => {
+                    updateVoiceStatus("Modo Guía iniciado", false);
+                    showAssistantMessage("Te leeré cada pregunta. Puedes responder tocando A, B o C. Si no respondes, te diré la correcta y seguiré.", 6000);
+                    speakText("Te leeré cada pregunta. Puedes responder tocando A, B o C. Si no respondes, te diré la correcta y seguiré.", () => {
+                        startGuideMode();
+                    });
+                }, 100);
+                
+                return;
+            }
+
+            // Configurar modo estándar y tutor
+            if (mode === 'audio' || mode === 'tutor') {
                 audioActive = true;
                 const btn = document.getElementById('audioToggle');
                 btn.classList.add('active');
@@ -1317,9 +1521,6 @@
                     if (!isIOS) {
                         initRecognition();
                     }
-                } else if (mode === 'guide') {
-                    guideModeActive = true;
-                    voiceActive = false;
                 }
             } else {
                 audioActive = false;
@@ -1346,6 +1547,7 @@
             userAnswers = new Array(questions.length).fill(null);
             
             document.getElementById('introScreen').classList.add('hidden');
+            document.getElementById('resultsScreen').classList.add('hidden');
             const quiz = document.getElementById('quizScreen');
             quiz.classList.remove('hidden');
             quiz.classList.add('fade-in');
@@ -1357,13 +1559,6 @@
                 setTimeout(() => {
                     showAssistantMessage("¡Hola! Soy tu Tutor IA. Seleccionaré las preguntas y te guiaré por voz. Empezamos.", 4000);
                     speakText("¡Hola! Soy tu Tutor IA. Empezamos con el test.", () => {
-                        loadQuestion(0);
-                    });
-                }, 100);
-            } else if (mode === 'guide') {
-                setTimeout(() => {
-                    showAssistantMessage("Te leeré cada pregunta. Puedes responder tocando A, B o C. Si no respondes, te diré la correcta y seguiré.", 6000);
-                    speakText("Te leeré cada pregunta. Puedes responder tocando A, B o C. Si no respondes, te diré la correcta y seguiré.", () => {
                         loadQuestion(0);
                     });
                 }, 100);
@@ -1444,11 +1639,7 @@
             document.getElementById('btnFinish').style.display = index === (questions.length - 1) ? 'block' : 'none';
 
             updateGrid();
-            if (examMode === 'guide') {
-                setTimeout(runGuideSequence, 500);
-            } else if (audioActive) {
-                setTimeout(speakSequentially, 500);
-            }
+            if (audioActive) setTimeout(speakSequentially, 500);
         }
 
         function updateGrid() {
@@ -1460,6 +1651,8 @@
         }
 
         function selectOption(idx) {
+            if (activeMode === 'guide') return; // Bloquear completamente del flujo normal
+            
             if (examMode === 'tutor') {
                 if (questionResolved) return;
                 questionResolved = true;
@@ -1468,47 +1661,10 @@
                 updateVoiceStatus("", false);
             }
 
-            if (examMode === 'guide') {
-                if (guideQuestionResolved) return;
-                guideQuestionResolved = true;
-                clearTimeout(guideTimer);
-                clearInterval(guideInterval);
-                updateVoiceStatus("", false);
-            }
-
-            if (userAnswers[currentIndex] !== null && examMode !== 'tutor' && examMode !== 'guide') return; 
+            if (userAnswers[currentIndex] !== null && examMode !== 'tutor') return; 
             
             userAnswers[currentIndex] = idx;
             const opts = document.querySelectorAll('.option');
-            
-            const q = questions[currentIndex];
-            const isCorrect = (idx === q.ans);
-
-            if (examMode === 'guide') {
-                opts.forEach(o => o.style.pointerEvents = 'none');
-                
-                if (isCorrect) {
-                    opts[idx].classList.add('selected', 'success-border');
-                    if (window.confetti) confetti({ particleCount: 40, spread: 50, origin: { y: 0.8 }, colors: ['#10B981', '#ffffff'] });
-                } else {
-                    opts[idx].classList.add('selected', 'error-border');
-                    opts[q.ans].classList.add('success-border');
-                }
-
-                const shortEx = q.explanation ? q.explanation.split('.')[0] + '.' : '';
-                let msg = isCorrect ? 'Correcto.' : `No es correcta. La buena era la ${['A', 'B', 'C'][q.ans]}.`;
-                msg += ` ${shortEx}`;
-                
-                showAssistantMessage(msg, 5000);
-                window.speechSynthesis.cancel();
-                speakText(msg, () => {
-                    setTimeout(() => {
-                        if (currentIndex < questions.length - 1) navigate(1);
-                        else showConfirmModal();
-                    }, 800);
-                });
-                return;
-            }
 
             if (examMode === 'tutor') {
                 stopAudio();
@@ -1558,6 +1714,10 @@
         function closeConfirmModal() { document.getElementById('confirmModal').classList.remove('active'); }
 
         function submitExam() {
+            if (activeMode === 'guide') {
+                clearTimeout(guideTimer);
+                clearInterval(guideInterval);
+            }
             stopAudio();
             clearInterval(timerInterval);
             closeConfirmModal();

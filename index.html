@@ -1089,6 +1089,7 @@
             return best;
         }
 
+        window.utterances = []; // Fix for Safari/Chrome garbage collection bug
         function speakText(text, callback) {
             if (voiceActive) {
                 if (recognition && isListening) {
@@ -1099,19 +1100,36 @@
             }
 
             const ut = new SpeechSynthesisUtterance(text);
+            window.utterances.push(ut); // Keep reference to prevent GC
+
             ut.lang = 'es-ES';
             ut.rate = 1.0;
             const voice = getBestVoice();
             if (voice) ut.voice = voice;
-            ut.onend = () => {
+            
+            let called = false;
+            const finish = () => {
+                if (called) return;
+                called = true;
                 if (voiceActive) {
                     tutorState = TUTOR_STATES.IDLE;
                     updateVoiceStatus("", false);
                 }
                 if (callback) callback();
             };
+
+            ut.onend = finish;
+            ut.onerror = (e) => {
+                console.warn("[SPEECH] error:", e);
+                finish();
+            };
+
             currentUtterance = ut;
             synth.speak(ut);
+            
+            // Safety fallback (approx. reading speed)
+            const fallbackTimeout = (text.length / 10) * 1000 + 3000;
+            setTimeout(finish, fallbackTimeout);
         }
 
         

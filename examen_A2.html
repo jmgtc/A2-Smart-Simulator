@@ -533,6 +533,16 @@
                     </div>
                     <p id="micTestStatus" style="font-size: 0.8rem; margin-top: 10px; color: var(--success); display: none; text-align: center;">✅ Micrófono OK</p>
                 </div>
+                
+                <!-- DIAGNOSTICO MICROFONO -->
+                <div class="glass-panel" style="padding: 15px; grid-column: span 2; border: 1px solid #f59e0b; background: rgba(245, 158, 11, 0.05);" id="diagnosticPanel">
+                    <h3 style="color: #f59e0b; margin-bottom: 5px; font-size: 1.1rem;">🛠 Diagnóstico de Micrófono (Aislado)</h3>
+                    <p style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 10px;">Prueba pura de Web Speech API (sin IA, sin estados, sin TTS). Usa esto para aislar problemas del navegador.</p>
+                    <button class="btn-secondary" style="padding: 10px; font-size: 0.9rem; border-color: #f59e0b; color: #f59e0b; width: 100%;" onclick="runMicDiagnostic()">Iniciar Diagnóstico</button>
+                    <div id="diagnosticLogs" style="font-family: monospace; font-size: 0.75rem; background: rgba(0,0,0,0.5); padding: 10px; margin-top: 10px; max-height: 200px; overflow-y: auto; color: #10b981; border-radius: 5px; text-align: left; display: none;">
+                        Esperando...
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1401,6 +1411,83 @@
                 banner.className = 'result-banner no-apto fade-in';
                 title.innerText = 'NO APTO';
                 sub.innerText = `Has tenido ${totalErrors} fallos. El máximo permitido son ${allowedErrors}.`;
+            }
+        }
+
+        async function runMicDiagnostic() {
+            const logsContainer = document.getElementById('diagnosticLogs');
+            logsContainer.style.display = 'block';
+            logsContainer.innerHTML = '';
+            
+            const log = (msg) => {
+                const div = document.createElement('div');
+                div.textContent = `[MIC TEST] ${msg}`;
+                logsContainer.appendChild(div);
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+                console.log(`[MIC TEST] ${msg}`);
+            };
+
+            log('Cancelando speechSynthesis...');
+            window.speechSynthesis.cancel();
+            
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            log(`API Soportada: ${SpeechRecognition ? 'SÍ' : 'NO'}`);
+            
+            if (!SpeechRecognition) {
+                log('ERROR: SpeechRecognition no soportado en este navegador.');
+                return;
+            }
+
+            if (navigator.permissions && navigator.permissions.query) {
+                try {
+                    const perm = await navigator.permissions.query({name: 'microphone'});
+                    log(`Permiso microphone inicial: ${perm.state}`);
+                    perm.onchange = () => log(`Permiso cambió a: ${perm.state}`);
+                } catch(e) {
+                    log('No se pudo verificar navigator.permissions.query');
+                }
+            }
+
+            log('Creando nueva instancia de SpeechRecognition...');
+            const rec = new SpeechRecognition();
+            rec.lang = 'es-ES';
+            rec.continuous = false;
+            rec.interimResults = false;
+            rec.maxAlternatives = 3;
+
+            rec.onstart = () => log('onstart disparado');
+            rec.onaudiostart = () => log('onaudiostart disparado');
+            rec.onsoundstart = () => log('onsoundstart disparado');
+            rec.onspeechstart = () => log('onspeechstart disparado');
+
+            rec.onresult = (event) => {
+                try {
+                    const transcript = event.results[0][0].transcript;
+                    const conf = event.results[0][0].confidence;
+                    log(`result: "${transcript}" (confianza: ${Math.round(conf * 100)}%)`);
+                    if (event.results[0].length > 1) {
+                        for(let i=1; i<event.results[0].length; i++) {
+                            log(`  alt: "${event.results[0][i].transcript}"`);
+                        }
+                    }
+                } catch(e) {
+                    log(`Error procesando result: ${e.message}`);
+                }
+            };
+
+            rec.onnomatch = () => log('onnomatch disparado');
+            
+            rec.onerror = (event) => {
+                log(`error: ${event.error} (mensaje: ${event.message || 'N/A'})`);
+            };
+
+            rec.onend = () => log('onend disparado');
+
+            try {
+                log('Llamando a recognition.start()...');
+                rec.start();
+            } catch(e) {
+                log(`Excepción en start(): ${e.message}`);
             }
         }
 

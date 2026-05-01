@@ -477,6 +477,7 @@
             🎓
             <div class="assistant-status"></div>
         </div>
+        <div id="voiceStatusIndicator" style="position: absolute; bottom: -20px; right: 0; font-size: 0.75rem; color: var(--accent); background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 10px; opacity: 0; transition: opacity 0.3s; white-space: nowrap;"></div>
     </div>
 
     <header>
@@ -557,7 +558,8 @@
 
             <div class="actions">
                 <button class="btn-secondary" id="btnPrev" onclick="navigate(-1)">Anterior</button>
-                <div style="display: flex; gap: 10px;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button class="btn-secondary" id="btnReactivateTutor" onclick="reactivateTutor()" style="display: none; border-color: var(--accent); color: var(--accent);">Reactivar Tutor</button>
                     <button class="btn-secondary" id="btnReplay" onclick="repeatAudio()" style="display: none;">🔊 Repetir</button>
                     <button class="btn-primary" id="btnFinish" style="width: auto;" onclick="showConfirmModal()">Finalizar</button>
                 </div>
@@ -614,6 +616,29 @@
         let currentUtterance = null;
         let assistantTimeout = null;
 
+        const TUTOR_STATES = {
+            IDLE: 'IDLE',
+            SPEAKING: 'SPEAKING',
+            LISTENING: 'LISTENING',
+            PROCESSING: 'PROCESSING',
+            FEEDBACK: 'FEEDBACK',
+            CONFIRMING_SUBMIT: 'CONFIRMING_SUBMIT',
+            FINISHED: 'FINISHED',
+            PAUSED: 'PAUSED'
+        };
+        let tutorState = TUTOR_STATES.IDLE;
+        let failedListenAttempts = 0;
+        let pendingLongExplanation = '';
+        const DB_VERSION = "2026-05-01";
+
+        function updateVoiceStatus(text, isActive = true) {
+            const indicator = document.getElementById('voiceStatusIndicator');
+            if (indicator && voiceActive) {
+                indicator.innerText = text;
+                indicator.style.opacity = isActive ? '1' : '0';
+            }
+        }
+
         function showAssistantMessage(text, duration = 4000) {
             const bubble = document.getElementById('assistantBubble');
             if (!bubble) return;
@@ -638,7 +663,7 @@
 
         async function initApp() {
             try {
-                const response = await fetch('questions.json');
+                const response = await fetch(`questions.json?v=${DB_VERSION}`);
                 if (response.ok) {
                     allQuestions = await response.json();
                 } else {
@@ -649,6 +674,31 @@
                 allQuestions = DATABASE_QUESTIONS;
             }
             updateStatsUI();
+            
+            const statsCont = document.getElementById('statsContainer');
+            if(statsCont) {
+               const verSpan = document.createElement('div');
+               verSpan.style.cssText = 'margin-top: 10px; font-size: 0.75rem; color: var(--text-muted); text-align: center;';
+               verSpan.innerHTML = `Base de preguntas versión ${DB_VERSION} | <a href="#" onclick="testVoice()" style="color:var(--accent); text-decoration:none;">Probar Voz</a>`;
+               statsCont.parentNode.insertBefore(verSpan, statsCont.nextSibling);
+            }
+        }
+
+        function testVoice() {
+            const v = getBestVoice();
+            if (v) {
+                alert(`Voz seleccionada: ${v.name} (${v.lang})`);
+                speakText(`Probando voz seleccionada.`);
+            } else {
+                alert("No hay voces disponibles en tu dispositivo.");
+            }
+        }
+
+        function reactivateTutor() {
+            tutorState = TUTOR_STATES.IDLE;
+            failedListenAttempts = 0;
+            document.getElementById('btnReactivateTutor').style.display = 'none';
+            speakText('Tutor reactivado. ¿Qué alternativa eliges?', () => startListening());
         }
 
 
@@ -671,7 +721,7 @@
         function initRecognition() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
-                alert("Tu navegador no soporta reconocimiento de voz.");
+                alert("Tu navegador permite escuchar el tutor, pero no responder por voz. Usa Chrome o Edge para modo manos libres completo.");
                 return;
             }
             if (!recognition) {
@@ -681,6 +731,10 @@
                 recognition.continuous = false;
                 recognition.onstart = () => { 
                     isListening = true; 
+                    if (tutorState !== TUTOR_STATES.SPEAKING) {
+                        tutorState = TUTOR_STATES.LISTENING;
+                        updateVoiceStatus("Escuchando… responde A, B o C", true);
+                    }
                     const quiz = document.getElementById('quizScreen');
                     if (quiz) quiz.classList.add('listening');
                     const avatar = document.querySelector('.assistant-avatar');
@@ -693,17 +747,31 @@
                     const avatar = document.querySelector('.assistant-avatar');
                     if (avatar) avatar.classList.remove('listening-pulse');
 
-                    if (examMode === 'tutor' && voiceActive && userAnswers[currentIndex] === null) {
-                        setTimeout(() => {
-                            if (!synth.speaking && userAnswers[currentIndex] === null && !isListening) {
-                                showAssistantMessage('¿Sigues ahí? Dime la A, la B o la C.', 3000);
-                                speakText('No he escuchado nada. ¿Sigues ahí? Dime la alternativa.', () => startListening());
-                            }
-                        }, 1000);
+                    if (examMode === 'tutor' && voiceActive && userAnswers[currentIndex] === null && 
+                        tutorState !== TUTOR_STATES.SPEAKING && tutorState !== TUTOR_STATES.PROCESSING && 
+                        tutorState !== TUTOR_STATES.FINISHED && tutorState !== TUTOR_STATES.PAUSED && 
+                        tutorState !== TUTOR_STATES.CONFIRMING_SUBMIT) {
+                        
+                        failedListenAttempts++;
+                        if (failedListenAttempts >= 5) {
+                            tutorState = TUTOR_STATES.PAUSED;
+                            updateVoiceStatus("Tutor pausado", true);
+                            document.getElementById('btnReactivateTutor').style.display = 'block';
+                            showAssistantMessage('Tutor pausado por inactividad. Toca "Reactivar Tutor" cuando estés listo.', 5000);
+                            return;
+                        }
+
+                        if (failedListenAttempts % 2 === 0) {
+                            speakText('No te he entendido. Responde solo A, B, C, repetir, pasar o terminar.', () => startListening());
+                        } else {
+                            setTimeout(startListening, 300); // Silent retry
+                        }
                     }
                 };
                 recognition.onresult = (event) => {
-                    const command = event.results[0][0].transcript.toLowerCase();
+                    tutorState = TUTOR_STATES.PROCESSING;
+                    updateVoiceStatus("Procesando respuesta...", true);
+                    const command = event.results[0][0].transcript;
                     processVoiceCommand(command);
                 };
                 recognition.onerror = () => {
@@ -713,57 +781,117 @@
         }
 
         function startListening() {
-            if (!voiceActive || !recognition || isListening) return;
-            
-            if (synth.speaking) {
-                setTimeout(startListening, 250);
-                return;
-            }
+            if (!voiceActive || !recognition || tutorState === TUTOR_STATES.SPEAKING || tutorState === TUTOR_STATES.PAUSED || tutorState === TUTOR_STATES.FINISHED) return;
+            if (synth.speaking || synth.pending) return;
             
             try { recognition.start(); } catch(e) {}
         }
 
-        function processVoiceCommand(cmd) {
-            console.log('Comando de voz:', cmd);
+        function processVoiceCommand(rawCmd) {
             if (!questions || questions.length === 0) return;
-            const q = questions[currentIndex];
+            if (tutorState === TUTOR_STATES.PAUSED) return;
+
+            const cmd = rawCmd.toLowerCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove accents
+                .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!]/g,"") // remove punctuation
+                .trim();
             
-            // Repetir
-            if (cmd.includes('repetir') || cmd.includes('repite')) {
-                if (cmd.includes('opción a') || cmd.includes('la a')) { readSingleOption(0); return; }
-                if (cmd.includes('opción b') || cmd.includes('la b')) { readSingleOption(1); return; }
-                if (cmd.includes('opción c') || cmd.includes('la c')) { readSingleOption(2); return; }
-                repeatAudio(); return;
+            console.log('Comando de voz normalizado:', cmd);
+
+            // Confirmación de entrega
+            if (tutorState === TUTOR_STATES.CONFIRMING_SUBMIT) {
+                if (cmd.match(/^(si entregar|si entregalo|entregar|si)$/)) {
+                    submitExam();
+                } else if (cmd.match(/^(cancelar|no|no entregar)$/)) {
+                    tutorState = TUTOR_STATES.IDLE;
+                    closeConfirmModal();
+                    speakText('De acuerdo, continuamos. ¿Qué alternativa eliges?', () => startListening());
+                } else {
+                    updateVoiceStatus("No entendido", true);
+                    speakText('No te he entendido. ¿Seguro que quieres entregar el examen? Di sí entregar o cancelar.', () => startListening());
+                }
+                return;
             }
 
-            // Seleccionar (validación estricta para evitar falsos positivos de ruido)
-            if (cmd === 'a' || cmd.includes('la a') || cmd.includes('alternativa a') || cmd === 'alfa') { selectOption(0); return; }
-            if (cmd === 'b' || cmd.includes('la b') || cmd.includes('alternativa b') || cmd === 'bravo') { selectOption(1); return; }
-            if (cmd === 'c' || cmd.includes('la c') || cmd.includes('alternativa c') || cmd === 'charlie') { selectOption(2); return; }
+            const q = questions[currentIndex];
+            failedListenAttempts = 0; // reset on valid detection
+
+            // Repetir
+            if (cmd.match(/^(repite|repetir|repite la pregunta)$/)) { repeatAudio(); return; }
+            if (cmd.match(/^(opcion a|la a|repite la a)$/)) { readSingleOption(0); return; }
+            if (cmd.match(/^(opcion b|la b|repite la b)$/)) { readSingleOption(1); return; }
+            if (cmd.match(/^(opcion c|la c|repite la c)$/)) { readSingleOption(2); return; }
+            if (cmd.match(/^(repite opciones|repite las opciones)$/)) { 
+                speakSequentially(true);
+                return; 
+            }
+
+            // Seleccionar
+            if (cmd.match(/^(a|la a|opcion a|respuesta a|alfa)$/)) { selectOption(0); return; }
+            if (cmd.match(/^(b|la b|opcion b|respuesta b|bravo)$/)) { selectOption(1); return; }
+            if (cmd.match(/^(c|la c|opcion c|respuesta c|charlie)$/)) { selectOption(2); return; }
 
             // Navegar
-            if (cmd.includes('siguiente') || cmd.includes('pasar')) { navigate(1); return; }
-            if (cmd.includes('anterior') || cmd.includes('volver')) { navigate(-1); return; }
-            if (cmd.includes('terminar') || cmd.includes('finalizar') || cmd.includes('entregar')) { showConfirmModal(); return; }
+            if (cmd.match(/^(siguiente|pasar|salta|saltar)$/)) { navigate(1); return; }
+            if (cmd.match(/^(anterior|volver)$/)) { navigate(-1); return; }
+            if (cmd.match(/^(terminar|finalizar|entregar)$/)) { 
+                tutorState = TUTOR_STATES.CONFIRMING_SUBMIT;
+                showConfirmModal();
+                speakText('¿Seguro que quieres entregar el examen? Di sí entregar o cancelar.', () => startListening());
+                return; 
+            }
 
-            // Fallback
-            showAssistantMessage('No te he entendido bien. ¿Puedes repetir? Di la A, la B o la C.', 3000);
-            speakText('No te he entendido bien. ¿Puedes repetir la alternativa? Di la A, la B o la C.', () => startListening());
+            // Comandos Pedagógicos Extra
+            if (cmd.match(/^(explicame mas|mas informacion|por que)$/)) {
+                if (pendingLongExplanation) {
+                    speakText(pendingLongExplanation, () => startListening());
+                } else {
+                    speakText('No tengo más detalles para esta pregunta.', () => startListening());
+                }
+                return;
+            }
+            if (cmd.match(/^(no lo entiendo)$/)) {
+                speakText('Tranquilo. ' + (q.explanation || 'Revisa la normativa en el manual.'), () => startListening());
+                return;
+            }
+            if (cmd.match(/^(marca esta para repasar|marcar)$/)) {
+                if (!stats.failedQuestions.includes(q.q)) stats.failedQuestions.push(q.q);
+                localStorage.setItem('a2_stats', JSON.stringify(stats));
+                speakText('Pregunta marcada para repasar. ¿Qué alternativa eliges?', () => startListening());
+                return;
+            }
+            if (cmd.match(/^(cuantos fallos llevo)$/)) {
+                const mistakes = userAnswers.reduce((acc, val, i) => (val !== null && val !== questions[i].ans) ? acc + 1 : acc, 0);
+                speakText(`Llevas ${mistakes} fallos detectados en este examen.`, () => startListening());
+                return;
+            }
+
+            // Fallback estricto
+            updateVoiceStatus("No entendido", true);
+            failedListenAttempts++;
+            showAssistantMessage('Comando no reconocido.', 2000);
+            setTimeout(() => startListening(), 500); // Silent retry
         }
 
         function speakFeedback(isCorrect, explanation, callback) {
-            let msg = isCorrect ? '¡Correcto! Muy bien hecho.' : 'No es correcto.';
-            if (!isCorrect) {
-                msg += ` La respuesta correcta era la ${['A', 'B', 'C'][questions[currentIndex].ans]}.`;
-            }
-            if (explanation) {
-                msg += ` ${explanation}`;
-            }
+            tutorState = TUTOR_STATES.FEEDBACK;
+            const q = questions[currentIndex];
             
-            msg += (currentIndex < questions.length - 1) ? ' Vamos con la siguiente.' : ' Has terminado el examen.';
+            pendingLongExplanation = explanation || 'No hay explicación adicional.';
+            
+            let shortEx = explanation ? explanation.split('.')[0] + '.' : '';
+            let msg = isCorrect ? 'Correcto. La clave es ' + shortEx : `No es la correcta. La buena era la ${['A', 'B', 'C'][q.ans]}. Recuerda que ${shortEx}`;
+            
+            msg += (currentIndex < questions.length - 1) ? '' : ' Has terminado el examen.';
             
             showAssistantMessage(msg, 8000);
-            speakText(msg, callback);
+            speakText(msg, () => {
+                if (currentIndex < questions.length - 1) {
+                    if (callback) callback();
+                } else {
+                    tutorState = TUTOR_STATES.FINISHED;
+                }
+            });
         }
 
         function readSingleOption(idx) {
@@ -848,31 +976,46 @@
             speakSequentially();
         }
 
-        
         function getBestVoice() {
             const voices = window.speechSynthesis.getVoices();
-            // Prioridad: Voces premium (Siri, Google, o Monica) en español
-            const priority = ['Siri', 'Monica', 'Google', 'Paulina', 'Luciana', 'Helena'];
+            const priority = ['Siri', 'Monica', 'Google', 'Microsoft', 'Apple', 'Paulina', 'Luciana', 'Helena'];
             let best = voices.find(v => v.lang.startsWith('es') && priority.some(p => v.name.includes(p)));
             if (!best) best = voices.find(v => v.lang.startsWith('es'));
             return best;
         }
 
         function speakText(text, callback) {
+            if (voiceActive) {
+                if (recognition && isListening) {
+                    try { recognition.stop(); } catch(e) {}
+                }
+                tutorState = TUTOR_STATES.SPEAKING;
+                updateVoiceStatus("Shivi hablando...", true);
+            }
+
             const ut = new SpeechSynthesisUtterance(text);
             ut.lang = 'es-ES';
             ut.rate = 1.0;
-            ut.onend = callback;
+            const voice = getBestVoice();
+            if (voice) ut.voice = voice;
+            ut.onend = () => {
+                if (voiceActive) {
+                    tutorState = TUTOR_STATES.IDLE;
+                    updateVoiceStatus("", false);
+                }
+                if (callback) callback();
+            };
             currentUtterance = ut;
             synth.speak(ut);
         }
 
         
-        function speakSequentially() {
+        function speakSequentially(optionsOnly = false) {
             if (!audioActive) return;
             const q = questions[currentIndex];
             stopAudio();
-            speakText(q.q, () => {
+            
+            const startReadingOptions = () => {
                 let optIdx = 0;
                 const opts = document.querySelectorAll('.option');
                 const readNextOption = () => {
@@ -898,7 +1041,13 @@
                     });
                 };
                 setTimeout(readNextOption, 800);
-            });
+            };
+
+            if (optionsOnly) {
+                startReadingOptions();
+            } else {
+                speakText(q.q, startReadingOptions);
+            }
         }
 
 

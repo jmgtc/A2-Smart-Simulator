@@ -8,7 +8,7 @@
    - questions.json: Network-first (puede actualizarse)
    ============================================================ */
 
-const CACHE_NAME = 'a2-sim-v3';  // ← Incrementar para forzar invalidación
+const CACHE_NAME = 'a2-smart-v2.1.0';  // ← Incrementar para forzar invalidación
 const STATIC_ASSETS = [
     './shivi.png',
     './manifest.json',
